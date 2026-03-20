@@ -1,0 +1,12 @@
+{
+    "rewrites": [
+      {
+        "source": "/bilt-sub-tracker",
+        "destination": "https://bilt-sub-tracker.vercel.app"
+      },
+      {
+        "source": "/bilt-sub-tracker/(.*)",
+        "destination": "https://bilt-sub-tracker.vercel.app/$1"
+      }
+    ]
+  }
