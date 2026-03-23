@@ -32,12 +32,12 @@ export default function Home() {
           Dreamfluid Labs
         </h1>
 
-        <p className="opacity-0 animate-fade-in-delay-1 text-sm font-light tracking-widest text-df-white/50 uppercase">
+        <p className="opacity-0 animate-fade-in-delay-1 text-sm font-light tracking-widest text-df-white/75 uppercase">
           An engine for vision
         </p>
 
         <Link
-          href="/bilt-sub-tracker"
+          href="/tools"
           className="opacity-0 animate-fade-in-delay-2 mt-6 text-xs tracking-wider text-df-white/40 transition-colors duration-500 hover:text-df-white/80"
         >
           Explore Tools →
