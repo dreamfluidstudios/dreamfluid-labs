@@ -39,21 +39,9 @@ export default function ToolsPage() {
           Tools
         </h1>
 
-        <ul className="flex w-full flex-col gap-3">
-          <li>
-            <Link
-              href="/bilt-sub-tracker"
-              className="group flex w-full flex-col gap-1 rounded-lg border border-df-white/10 bg-df-white/[0.03] px-5 py-4 text-left transition-colors duration-300 hover:border-df-white/20 hover:bg-df-white/[0.06]"
-            >
-              <span className="text-sm font-medium tracking-wide text-df-white/90">
-                Bilt 2.0 Sub Tracker
-              </span>
-              <span className="text-xs tracking-wide text-df-white/45 transition-colors group-hover:text-df-white/55">
-                Intro bonus tracker →
-              </span>
-            </Link>
-          </li>
-        </ul>
+        <p className="max-w-sm text-sm font-light tracking-wide text-df-white/40">
+          Nothing here yet. Check back later.
+        </p>
       </div>
     </main>
   );
