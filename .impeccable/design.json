@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-24T00:00:00.000Z",
+  "title": "Design System: Dreamfluid Labs",
+  "extensions": {
+    "colorMeta": {
+      "deep-space-black": { "role": "neutral", "displayName": "Deep Space Black", "canonical": "#0D0D0D", "tonalRamp": ["#000000", "#0D0D0D", "#151515", "#1A1A1A", "#303030", "#6C6E71", "#F5F5F5", "#FAFAFA"] },
+      "midnight-veil": { "role": "neutral", "displayName": "Midnight Veil", "canonical": "#0F1013" },
+      "obsidian-black": { "role": "neutral", "displayName": "Obsidian Black", "canonical": "#151515" },
+      "phantom-black": { "role": "neutral", "displayName": "Phantom Black", "canonical": "#1A1A1A" },
+      "carbon-gray": { "role": "neutral", "displayName": "Carbon Gray", "canonical": "#222222" },
+      "graphite-gray": { "role": "neutral", "displayName": "Graphite Gray", "canonical": "#303030" },
+      "silver-veil": { "role": "neutral", "displayName": "Silver Veil", "canonical": "#6C6E71" },
+      "clarity-white": { "role": "neutral", "displayName": "Clarity White", "canonical": "#FAFAFA" },
+      "canvas-white": { "role": "neutral", "displayName": "Canvas White", "canonical": "#F5F5F5" },
+      "dreamfluid-blue": { "role": "primary", "displayName": "Dreamfluid Blue", "canonical": "#1A3FBC" },
+      "dreamfluid-violet": { "role": "secondary", "displayName": "Dreamfluid Violet", "canonical": "#6B23B1" },
+      "starlight-blue": { "role": "primary", "displayName": "Dreamfluid Starlight Blue", "canonical": "#0A6CFF", "tonalRamp": ["#031b40", "#053680", "#0851bf", "#0A6CFF", "#4791ff", "#78aeff", "#a9ccff", "#dae9ff"] },
+      "nebula-violet": { "role": "secondary", "displayName": "Dreamfluid Nebula Violet", "canonical": "#9C28F1", "tonalRamp": ["#270a3c", "#4e1479", "#751eb5", "#9C28F1", "#b55ef5", "#c989f7", "#dcb4fa", "#f0dffd"] },
+      "aqua-cyan": { "role": "tertiary", "displayName": "Dreamfluid Aqua Cyan", "canonical": "#00BEFF" },
+      "electric-violet": { "role": "tertiary", "displayName": "Dreamfluid Electric Violet", "canonical": "#AF28FF" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Cormorant Roman", "purpose": "Rare, vision-level headline statements only." },
+      "expression": { "displayName": "Cormorant Italic", "purpose": "Rare emotional accent — one word or short phrase, never routine emphasis." },
+      "body": { "displayName": "Inter", "purpose": "Load-bearing default for all body copy, UI, and navigation." },
+      "label": { "displayName": "Space Mono", "purpose": "Metadata, status, timecodes, eyebrow labels — exposes the system beneath the work." }
+    },
+    "shadows": [
+      { "name": "ambient-elevation-dark", "value": "0px 2px 8px rgba(108, 110, 113, 0.2)", "purpose": "Gentle lift for cards/panels/modals on the dark surface." },
+      { "name": "gradient-glow", "value": "0 0 12px rgba(10, 108, 255, 0.3), 0 0 24px rgba(156, 40, 241, 0.3)", "purpose": "Signature Dreamfluid glow — Starlight Blue inner + Nebula Violet outer — for hover/active/focus states." }
+    ],
+    "motion": [
+      { "name": "ease-hover", "value": "180ms ease", "purpose": "Border/background/transform transitions on hover (observed in nav and card treatments)." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "760px" },
+      { "name": "md", "value": "820px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default CTA. Starlight Blue fill; gains the gradient glow on hover/focus instead of changing fill; shifts to Dreamfluid Blue when pressed.",
+      "html": "<button class=\"ds-btn-primary\">Explore Tools</button>",
+      "css": ".ds-btn-primary { background: #0A6CFF; color: #FAFAFA; font-family: Inter, sans-serif; font-weight: 600; padding: 12px 28px; border: none; border-radius: 999px; transition: box-shadow 180ms ease, transform 180ms ease; } .ds-btn-primary:hover, .ds-btn-primary:focus-visible { box-shadow: 0 0 12px rgba(10,108,255,0.3), 0 0 24px rgba(156,40,241,0.3); transform: translateY(-1px); } .ds-btn-primary:active { background: #1A3FBC; } .ds-btn-primary:disabled { background: #303030; color: #6C6E71; box-shadow: none; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary CTA. Nebula Violet fill; same glow-on-hover, Dreamfluid Violet pressed state.",
+      "html": "<button class=\"ds-btn-secondary\">Learn More</button>",
+      "css": ".ds-btn-secondary { background: #9C28F1; color: #FAFAFA; font-family: Inter, sans-serif; font-weight: 600; padding: 12px 28px; border: none; border-radius: 999px; transition: box-shadow 180ms ease, transform 180ms ease; } .ds-btn-secondary:hover, .ds-btn-secondary:focus-visible { box-shadow: 0 0 12px rgba(10,108,255,0.3), 0 0 24px rgba(156,40,241,0.3); transform: translateY(-1px); } .ds-btn-secondary:active { background: #6B23B1; }"
+    },
+    {
+      "name": "Eyebrow Chip",
+      "kind": "chip",
+      "refersTo": "eyebrow-chip",
+      "description": "Pill-shaped label for section kickers and status metadata. Space Mono, uppercase, wide tracking.",
+      "html": "<span class=\"ds-eyebrow\">Dreamfluid Labs / R&D</span>",
+      "css": ".ds-eyebrow { display: inline-flex; align-items: center; padding: 7px 12px; border: 1px solid rgba(10,108,255,0.32); border-radius: 999px; background: rgba(10,108,255,0.08); color: #00BEFF; font-family: 'Space Mono', monospace; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card-base",
+      "description": "Base container for grouped content. Obsidian Black fill, hairline Silver Veil border, soft ambient elevation shadow at rest.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Experiment 001</h3><p class=\"ds-card-body\">Internal R&amp;D tool description goes here.</p></div>",
+      "css": ".ds-card { background: linear-gradient(180deg, rgba(26,26,26,0.84), rgba(15,16,19,0.74)); border: 1px solid rgba(108,110,113,0.22); border-radius: 20px; padding: 1.25rem; box-shadow: 0px 2px 8px rgba(108,110,113,0.2); } .ds-card-title { font-family: Inter, sans-serif; font-weight: 600; color: #FAFAFA; margin: 0 0 0.5rem; } .ds-card-body { font-family: Inter, sans-serif; color: #F5F5F5; line-height: 1.6; margin: 0; }"
+    },
+    {
+      "name": "Nav Pill Link",
+      "kind": "nav",
+      "refersTo": "nav-link",
+      "description": "Pill-shaped navigation link on a translucent blurred bar. Hairline border at rest, Starlight-tinted border + lift on hover.",
+      "html": "<a class=\"ds-nav-link\" href=\"#\">Tools</a>",
+      "css": ".ds-nav-link { display: inline-flex; text-decoration: none; color: rgba(250,250,250,0.86); border: 1px solid rgba(108,110,113,0.24); border-radius: 999px; padding: 8px 12px; background: rgba(34,34,34,0.55); font-family: Inter, sans-serif; font-size: 0.9rem; transition: border-color 180ms ease, transform 180ms ease, background 180ms ease; } .ds-nav-link:hover { border-color: rgba(10,108,255,0.58); background: rgba(10,108,255,0.09); transform: translateY(-1px); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Dream Engine's Workshop",
+    "overview": "Dreamfluid's brand thesis splits into two halves: \"the substance of dreams\" (Dreamfluid Studios and Dreamfluid Music — the narrative, cinematic, felt output) and \"the fuel for creativity\" (Dreamfluid Technology and, centrally, Dreamfluid Labs — the engine itself). Labs is not backstage support for Studios' public output; it *is* the literal engine for vision — Dreamfluid's central R&D, experimentation, and incubation hub, building the internal and public-facing creative tools that power creation across every division. Where Studios and Music carry the poetic, narrative half of the brand voice, Labs carries the fuel half: experimental, systematic, future-facing, and squarely about working tools rather than finished stories. The system stays recognizably Dreamfluid (the same deep-space palette, the same starlight-blue/nebula-violet glow, the same restraint) but leans its type and texture toward the mechanism rather than the myth — Inter and Space Mono do the daily work, and Cormorant Garamond is held in reserve for the rare moment a piece of Labs work earns a vision-level statement.\n\nThe overall Dreamfluid voice is cosmic, poetic, and cinematic — never clinical — and Labs inherits that atmosphere rather than opting out of it. Depth comes from ambient gradient glow and layered dark tones, not from literal texture gimmicks; the studio's own guidance explicitly favors a soft grain/noise field or a faint structural grid-line overlay over decorative background patterns. Public tone across all Dreamfluid surfaces favors mystique through restraint and curation over exhaustive explanation — Labs should read as evidence of real, ongoing work, not a marketing pitch for it.",
+    "keyCharacteristics": [
+      "Dark-first, deep-space palette with two ambient brand glows (starlight blue, nebula violet) as the only saturated color, used sparingly against near-black neutrals.",
+      "Inter carries structure and every functional surface; Space Mono exposes the \"engine beneath the work\" (labels, metadata, status); Cormorant Garamond is rare and reserved for genuine vision-level statements, not decoration.",
+      "Depth reads as atmosphere (glow, gradient, soft grain or a faint grid field), not as literal shadow-heavy elevation or borrowed dot-grid textures.",
+      "Restraint over embellishment: one accent color family does the work; components stay flat and quiet until a state (hover, focus, active) calls for glow."
+    ],
+    "rules": [
+      { "name": "The One Accent Family Rule", "body": "Starlight Blue and Nebula Violet (plus their pressed-state siblings) are the only saturated color in the system. Aqua Cyan and Electric Violet exist solely as rare edge-glow hairlines. Do not introduce a third hue family.", "section": "colors" },
+      { "name": "The Rarity Rule", "body": "Cormorant Garamond's italic emotional accent and the brand's saturated colors both work the same way: their power depends on staying rare. If either appears in more than a small fraction of a screen, it has stopped signaling and started decorating.", "section": "colors" },
+      { "name": "The Text-Contrast Rule", "body": "Dreamfluid Blue (#1A3FBC) and Dreamfluid Violet (#6B23B1) read as ~2.3:1 against Deep Space Black — well under the 4.5:1 floor for text. They work as fills, icon accents, and dividers, never as small text or link color directly on the dark neutral stack. Use a lightened tint from the accent's tonal ramp instead (e.g. #78aeff, a lightened step of Starlight Blue, at ~8.6:1).", "section": "colors" },
+      { "name": "The Optical Balance Rule", "body": "Never assign Inter and Cormorant the same numeric font size and assume visual equality. When mixing inline, size the italic ~7–14% larger than the sans with a small baseline shift; tune per-phrase rather than relying on one universal mixed-type class.", "section": "typography" },
+      { "name": "The Complete-Line Rule", "body": "Cormorant Roman reads as a complete line or headline, not mixed inline with Inter by default.", "section": "typography" },
+      { "name": "The Expressive Italic Rule", "body": "Cormorant Italic signals emotion, a fluid shift in voice, or a manifesto/vision-card moment — never navigation, buttons, labels, form controls, long paragraphs, or routine emphasis.", "section": "typography" },
+      { "name": "The Atmosphere-Not-Depth Rule", "body": "Separation between surfaces comes from soft ambient glow and tonal layering, not from implying physical stacking with heavy shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Inter as the dependable, load-bearing foundation for all body copy, UI, and navigation.",
+      "Do use Space Mono for metadata, status, timecodes, and eyebrow labels.",
+      "Do reserve Cormorant Garamond for genuine vision-level statements — rare, not routine.",
+      "Do use the Starlight Blue / Nebula Violet gradient glow as the primary hover/active signal on interactive elements, in place of hard borders or heavy shadows.",
+      "Do use the Ambient Field (gradient + soft glow + optional grain/grid texture) as the site's signature background treatment."
+    ],
+    "donts": [
+      "Don't use the generic dot-grid background pattern currently on the homepage/tools page — replace it with the Ambient Field treatment.",
+      "Don't mix Roman serif inline with sans by default, or set long paragraphs in Cormorant or Space Mono.",
+      "Don't use Cormorant Italic for navigation, buttons, labels, or routine emphasis.",
+      "Don't introduce a third saturated hue family beyond the Blue/Violet pairing.",
+      "Don't drift toward generic SaaS, bridal, luxury-fashion, or ornamental aesthetics."
+    ]
+  }
+}

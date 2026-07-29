@@ -27,3 +27,6 @@ npm-debug.log*
 # editor
 .vscode/
 *.swp
+
+# playwright mcp output
+.playwright-mcp/

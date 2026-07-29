@@ -1,25 +1,51 @@
 import type { Config } from "tailwindcss";
+import { heroAnimations, heroKeyframes } from "./src/components/Hero/hero.animations";
 
 const config: Config = {
   content: [
-    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
     extend: {
       colors: {
         "df-black": "#0D0D0D",
+        "df-midnight": "#0F1013",
+        "df-obsidian": "#151515",
+        "df-phantom": "#1A1A1A",
+        "df-carbon": "#222222",
+        "df-graphite": "#303030",
+        "df-silver": "#6C6E71",
+        "df-canvas": "#F5F5F5",
+        "df-white": "#FAFAFA",
         "df-blue": "#1A3FBC",
         "df-violet": "#6B23B1",
-        "df-white": "#FAFAFA",
+        "df-starlight": "#0A6CFF",
+        "df-nebula": "#9C28F1",
+        "df-aqua": "#00BEFF",
+        "df-electric": "#AF28FF",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
+        serif: ["Cormorant Garamond", "Georgia", "Times New Roman", "serif"],
+        mono: ["Space Mono", "Courier New", "monospace"],
+        pixel: ["Geist Pixel Square", "monospace"],
+        "pixel-line": ["Geist Pixel Line", "monospace"],
+        "pixel-grid": ["Geist Pixel Grid", "monospace"],
+      },
+      boxShadow: {
+        // Signature Dreamfluid gradient glow: Starlight Blue inner ring +
+        // Nebula Violet outer ring. The brand's primary hover/focus signal on
+        // interactive elements (buttons, inputs, cards) — see DESIGN.md.
+        glow:
+          "0 0 12px rgba(10, 108, 255, 0.3), 0 0 24px rgba(156, 40, 241, 0.3)",
+        // Neutral white bloom — a quieter hover/focus signal for light-filled
+        // surfaces (e.g. the white button) where the coloured glow reads busy.
+        "glow-white":
+          "0 0 12px rgba(250, 250, 250, 0.3), 0 0 28px rgba(250, 250, 250, 0.12)",
       },
       keyframes: {
-        "fade-in": {
-          "0%": { opacity: "0", transform: "translateY(8px)" },
-          "100%": { opacity: "1", transform: "translateY(0)" },
-        },
+        // AmbientField background blobs; hero intro keyframes are owned by the
+        // Hero package (see src/components/Hero/hero.animations.ts).
         "glow-drift-blue": {
           "0%":   { transform: "translate(0, 0) scale(1)" },
           "25%":  { transform: "translate(80px, 40px) scale(1.08)" },
@@ -34,13 +60,12 @@ const config: Config = {
           "75%":  { transform: "translate(30px, -70px) scale(1.03)" },
           "100%": { transform: "translate(0, 0) scale(1)" },
         },
+        ...heroKeyframes,
       },
       animation: {
-        "fade-in": "fade-in 1s ease-out forwards",
-        "fade-in-delay-1": "fade-in 1s ease-out 0.2s forwards",
-        "fade-in-delay-2": "fade-in 1s ease-out 0.4s forwards",
         "glow-drift-blue": "glow-drift-blue 18s ease-in-out infinite",
         "glow-drift-violet": "glow-drift-violet 22s ease-in-out infinite",
+        ...heroAnimations,
       },
     },
   },
