@@ -32,9 +32,7 @@ export const HeadlineWord = ({ variant = "sans", element, children }: HeadlineWo
   );
 
   return element ? (
-    <PeriodicElement {...element} symbol={children}>
-      {word}
-    </PeriodicElement>
+    <PeriodicElement {...element}>{word}</PeriodicElement>
   ) : (
     word
   );

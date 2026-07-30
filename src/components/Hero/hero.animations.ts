@@ -7,8 +7,8 @@
 // Beat order (by delay): fade-in → word-tilt → vision-glow → element-slam
 // (card falls in) with its element-shudder + impact ripple at touchdown.
 // To move the slam, keep element-shudder's delay = slam delay + touchdown
-// offset (0.7·0.65s), and keep the element-ghost/element-lock variant sharing
-// the slam slot. Durations encode physics feel — retune delays, not durations.
+// offset (0.7·0.65s). Durations encode physics feel — retune delays, not
+// durations.
 //
 // Keyframe names here must match the animationName checks in the hooks:
 // useWordLift → "word-tilt", useSlamImpact → "element-slam". "word-tilt" stays
@@ -43,28 +43,7 @@ export const heroKeyframes = {
         "0 0 18px rgba(250,250,250,0.22), 0 0 48px rgba(250,250,250,0.10)",
     },
   },
-  // Periodic-element card entrance variant: a ghost of the tile flashes around
-  // the word at different offsets/scales before the real chrome locks in.
-  "element-ghost": {
-    "0%":   { opacity: "0", transform: "translate(-0.85em, -0.55em) scale(1.18)" },
-    "10%":  { opacity: "1", transform: "translate(-0.85em, -0.55em) scale(1.18)" },
-    "20%":  { opacity: "0", transform: "translate(0.85em, -0.55em) scale(1.3)" },
-    "30%":  { opacity: "1", transform: "translate(0.85em, -0.55em) scale(1.3)" },
-    "40%":  { opacity: "0", transform: "translate(-0.75em, 0.5em) scale(0.72)" },
-    "50%":  { opacity: "1", transform: "translate(-0.75em, 0.5em) scale(0.72)" },
-    "60%":  { opacity: "0", transform: "translate(0.18em, -0.14em) scale(1.05)" },
-    "70%":  { opacity: "1", transform: "translate(0.18em, -0.14em) scale(1.05)" },
-    "80%":  { opacity: "0", transform: "translate(0, 0) scale(1)" },
-    "100%": { opacity: "0", transform: "translate(0, 0) scale(1)" },
-  },
-  "element-lock": {
-    "0%":   { opacity: "0" },
-    "40%":  { opacity: "1" },
-    "55%":  { opacity: "0" },
-    "70%":  { opacity: "1" },
-    "100%": { opacity: "1" },
-  },
-  // Card entrance variant (default): scale waypoints follow s = 6 - 5·(t/T)^2.6
+  // Card entrance: scale waypoints follow s = 6 - 5·(t/T)^2.6
   // so that, under linear timing, the fall reads as a heavy mass under gravity —
   // a long near-still hang up high, then a violent rush into a deep squash at
   // impact. Touchdown at 70%, then squash + rebound settle.
@@ -98,8 +77,6 @@ export const heroAnimations = {
   "fade-in-delay-2": "fade-in 1s ease-out 0.4s forwards",
   "word-tilt": "word-tilt 0.9s ease-in-out 1.4s forwards",
   "vision-glow": "vision-glow 2s ease-out 2.4s both",
-  "element-ghost": "element-ghost 0.72s steps(1, end) 3.2s both",
-  "element-lock": "element-lock 0.18s steps(1, end) 3.92s both",
   "element-slam": "element-slam 0.65s linear 3.2s both",
   "element-shudder": "element-shudder 0.12s steps(1, end) 3.655s both",
 };

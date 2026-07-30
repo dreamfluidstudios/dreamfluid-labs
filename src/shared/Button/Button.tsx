@@ -13,11 +13,16 @@ type ButtonProps = {
   className?: string;
 };
 
-// Shared pill shape; the hover/focus signal lives per-variant. Fills/colours
-// stay put across states — the signal is a glow (primary) or a border/fill
-// shift (ghost), never an opacity drop. See DESIGN.md → Buttons.
+// Shared pill shape; the hover signal lives per-variant. Fills/colours stay put
+// across states — the signal is a glow (primary) or a border/fill shift
+// (ghost), never an opacity drop. See DESIGN.md → Buttons.
+//
+// Keyboard focus adds a solid white outline on top of the per-variant signal,
+// as a reliable, high-contrast focus indicator (a glow alone is too easy to
+// miss). The offset keeps the ring visible even on the white fill by leaving a
+// gap of the dark backdrop between the button and the outline.
 const baseClasses =
-  "inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-base font-medium tracking-wide transition duration-300 focus-visible:outline-none";
+  "inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-base font-medium tracking-wide transition duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-df-white";
 
 const variantClasses: Record<ButtonVariant, string> = {
   // Primary CTA: solid fill, neutral white bloom on hover/focus.

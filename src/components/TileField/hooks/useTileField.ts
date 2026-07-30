@@ -58,6 +58,16 @@ export const useTileField = (
     let last = 0;
     let cols = 0;
     let rows = 0;
+    // Geometry is derived from the canvas's own measured box (not the window),
+    // so the bitmap always matches its on-screen size 1:1 and the lit tiles stay
+    // locked to the CSS grid bed — even on mobile, where the element's height
+    // (100vh) and window.innerHeight diverge behind the URL bar. width/height are
+    // CSS px; originX/originY are the canvas's viewport offset, used to map
+    // pointer/event coordinates (which are viewport-relative) into local space.
+    let width = 0;
+    let height = 0;
+    let originX = 0;
+    let originY = 0;
     // Idle auto-trail: an in-flight sweep (a virtual cursor at pixel x on `row`
     // moving in `dir`), plus the pending timer for the next one. `sweeping`
     // gates the whole loop until the hero signals its entrance is done.
@@ -65,16 +75,27 @@ export const useTileField = (
     let sweepTimer = 0;
     let sweeping = false;
 
+    // Cheap re-read of the canvas's box; scroll only shifts the origin, so it
+    // updates offsets without touching the (unchanged) bitmap size.
+    const measure = () => {
+      const rect = canvas.getBoundingClientRect();
+      width = rect.width;
+      height = rect.height;
+      originX = rect.left;
+      originY = rect.top;
+    };
+
     const resize = () => {
+      measure();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(window.innerWidth * dpr);
-      canvas.height = Math.round(window.innerHeight * dpr);
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      cols = Math.ceil(window.innerWidth / CELL) + 1;
-      rows = Math.ceil(window.innerHeight / CELL) + 1;
+      cols = Math.ceil(width / CELL) + 1;
+      rows = Math.ceil(height / CELL) + 1;
       tiles.clear();
       ripples.length = 0;
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      ctx.clearRect(0, 0, width, height);
     };
 
     const light = (c: number, r: number, peak: number, decay: number) => {
@@ -104,7 +125,7 @@ export const useTileField = (
         sweep.x += sweep.dir * SWEEP_SPEED * dt;
         light(Math.floor(sweep.x / CELL), sweep.row, 1, 1);
         const gone =
-          sweep.dir === 1 ? sweep.x > window.innerWidth + CELL : sweep.x < -CELL;
+          sweep.dir === 1 ? sweep.x > width + CELL : sweep.x < -CELL;
         if (gone) {
           sweep = null;
           if (sweeping) scheduleSweep();
@@ -120,7 +141,7 @@ export const useTileField = (
         }
         if (rp.idx >= rp.tiles.length) ripples.splice(i, 1);
       }
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      ctx.clearRect(0, 0, width, height);
       let fading = false;
       for (const [key, tile] of tiles) {
         if (key !== current) {
@@ -157,11 +178,12 @@ export const useTileField = (
 
     const move = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return;
-      const key =
-        Math.floor(e.clientY / CELL) * cols + Math.floor(e.clientX / CELL);
+      const c = Math.floor((e.clientX - originX) / CELL);
+      const r = Math.floor((e.clientY - originY) / CELL);
+      const key = r * cols + c;
       if (key === current) return;
       current = key;
-      light(Math.floor(e.clientX / CELL), Math.floor(e.clientY / CELL), 1, 1);
+      light(c, r, 1, 1);
       wake();
     };
 
@@ -184,12 +206,14 @@ export const useTileField = (
       // Clicks on interactive elements act, they don't ripple.
       const target = e.target as Element | null;
       if (target?.closest?.('a, button, [role="button"], input, textarea, select, label')) return;
-      spawnRipple(e.clientX, e.clientY);
+      spawnRipple(e.clientX - originX, e.clientY - originY);
     };
 
     const onRippleEvent = (e: Event) => {
+      // Event coordinates are viewport-relative (e.g. a card's bounding rect),
+      // so map them into the canvas's local space before rippling.
       const { x, y, shape, range } = (e as CustomEvent<TileRippleDetail>).detail;
-      spawnRipple(x, y, shape, range);
+      spawnRipple(x - originX, y - originY, shape, range);
     };
 
     const startSweep = () => {
@@ -197,7 +221,7 @@ export const useTileField = (
       sweep = {
         dir,
         row: Math.floor(Math.random() * rows),
-        x: dir === 1 ? -CELL : window.innerWidth + CELL,
+        x: dir === 1 ? -CELL : width + CELL,
       };
       wake();
     };
@@ -220,7 +244,12 @@ export const useTileField = (
     };
 
     resize();
-    window.addEventListener("resize", resize);
+    // A ResizeObserver on the canvas catches window resizes and orientation
+    // changes (the box is full-bleed) and re-derives geometry from the element
+    // itself; scroll only shifts the viewport offset, so it just re-measures.
+    const observer = new ResizeObserver(resize);
+    observer.observe(canvas);
+    window.addEventListener("scroll", measure, { passive: true });
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerdown", down);
     window.addEventListener(TILE_RIPPLE_EVENT, onRippleEvent);
@@ -229,7 +258,8 @@ export const useTileField = (
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(sweepTimer);
-      window.removeEventListener("resize", resize);
+      observer.disconnect();
+      window.removeEventListener("scroll", measure);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener(TILE_RIPPLE_EVENT, onRippleEvent);

@@ -61,7 +61,7 @@ export const supportTarget = (
 
 // A click below the word within this vertical band (px, measured down from the
 // underside) shoves it upward — as if the click's shockwave hit it from below.
-const PUSH_BAND_PX = 140;
+const PUSH_BAND_PX = 148;
 // Peak upward velocity impulse (deg/s) for a click right at the underside,
 // falling to zero across the band. Tuned to hop it up a couple degrees before
 // the released spring rocks it back to rest.

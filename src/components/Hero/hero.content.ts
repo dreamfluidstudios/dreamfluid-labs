@@ -9,7 +9,7 @@ type HeroContent = {
 export const heroContent = {
   wordmark: "Dreamfluid Labs",
   headline: [
-    { text: "An", variant: "sans", element: { number: "19", label: "Dreamfluid", entrance: "slam" } },
+    { text: "An", variant: "sans", element: { number: "19", label: "Dreamfluid" } },
     { text: "engine", variant: "pixel" },
     { text: "for", variant: "sans" },
     { text: "vision.", variant: "serif" },

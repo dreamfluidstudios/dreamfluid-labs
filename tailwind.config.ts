@@ -60,11 +60,16 @@ const config: Config = {
           "75%":  { transform: "translate(30px, -70px) scale(1.03)" },
           "100%": { transform: "translate(0, 0) scale(1)" },
         },
+        "loading-dot": {
+          "0%, 40%, 100%": { transform: "translateY(0)", color: "#6C6E71" },
+          "20%":           { transform: "translateY(-0.24em)", color: "#FAFAFA" },
+        },
         ...heroKeyframes,
       },
       animation: {
         "glow-drift-blue": "glow-drift-blue 18s ease-in-out infinite",
         "glow-drift-violet": "glow-drift-violet 22s ease-in-out infinite",
+        "loading-dot": "loading-dot 0.9s ease-in-out infinite",
         ...heroAnimations,
       },
     },

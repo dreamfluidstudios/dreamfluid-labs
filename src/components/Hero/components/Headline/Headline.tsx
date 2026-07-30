@@ -16,7 +16,7 @@ type HeadlineProps = {
 export const Headline = ({ words, className }: HeadlineProps) => (
   <p
     className={classNames(
-      "flex flex-wrap items-baseline justify-center gap-x-[0.18em] gap-y-1 text-[clamp(2.5rem,7vw,5.5rem)]",
+      "flex flex-nowrap items-baseline justify-center gap-x-[0.18em] text-[clamp(1.75rem,7vw,5.5rem)]",
       className,
     )}
   >
