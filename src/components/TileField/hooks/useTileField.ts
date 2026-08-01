@@ -22,14 +22,31 @@ const SWEEP_SPEED = 0.45; // px/ms
 const SWEEP_GAP_MIN_MS = 1800;
 const SWEEP_GAP_MAX_MS = 5000;
 
-// Neutral shades only — brightness varies per tile, hue never does.
-// Dimmer greys carry more alpha so every shade reads against df-black.
-const SHADES = [
-  { r: 250, g: 250, b: 250, fill: 0.05, line: 0.15 },
-  { r: 212, g: 215, b: 219, fill: 0.07, line: 0.13 },
-  { r: 170, g: 173, b: 178, fill: 0.09, line: 0.115 },
-  { r: 108, g: 110, b: 113, fill: 0.12, line: 0.1 },
+// Neutral shades only — brightness varies per tile, hue never does. The ramp is
+// interpolated between the brand's two light neutrals, Clarity White (df-white)
+// and Silver Veil (df-silver); the palette has no tokens between them. Stops are
+// weighted toward the light end rather than evenly spaced, and dimmer greys
+// carry more alpha, so every shade reads against the background.
+const SHADE_FROM = { r: 250, g: 250, b: 250 }; // #FAFAFA Clarity White
+const SHADE_TO = { r: 108, g: 110, b: 113 }; // #6C6E71 Silver Veil
+
+const SHADE_STOPS = [
+  { t: 0, fill: 0.05, line: 0.15 },
+  { t: 0.27, fill: 0.07, line: 0.13 },
+  { t: 0.56, fill: 0.09, line: 0.115 },
+  { t: 1, fill: 0.12, line: 0.1 },
 ];
+
+const mix = (from: number, to: number, t: number) =>
+  Math.round(from + (to - from) * t);
+
+const SHADES = SHADE_STOPS.map(({ t, fill, line }) => ({
+  r: mix(SHADE_FROM.r, SHADE_TO.r, t),
+  g: mix(SHADE_FROM.g, SHADE_TO.g, t),
+  b: mix(SHADE_FROM.b, SHADE_TO.b, t),
+  fill,
+  line,
+}));
 
 // How long a hover-trail tile takes to fade out.
 const FADE_MS = 900;

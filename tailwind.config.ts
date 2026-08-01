@@ -8,6 +8,8 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        "df-pure-black": "#000000",
+        "df-pure-white": "#FFFFFF",
         "df-black": "#0D0D0D",
         "df-midnight": "#0F1013",
         "df-obsidian": "#151515",

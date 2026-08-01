@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { AmbientGradientField } from "@/components/AmbientGradientField/AmbientGradientField";
 // Grain disabled for now — crisper without it. Restore this import + the
 // <GrainOverlay /> below to bring it back.
 // import { GrainOverlay } from "@/components/GrainOverlay/GrainOverlay";
@@ -14,7 +13,6 @@ export const metadata: Metadata = {
 export default function ComingSoonPage() {
   return (
     <main className="fixed inset-0 z-0 overflow-hidden">
-      <AmbientGradientField />
       <TileField rippleShape="round" />
       {/* <GrainOverlay /> — disabled for now (crisper without grain) */}
 
