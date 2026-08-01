@@ -26,7 +26,11 @@ export const HeadlineWord = ({ variant = "sans", element, children }: HeadlineWo
   useWordLift(ref, variant === "pixel");
 
   const word = (
-    <span ref={ref} className={classNames("text-df-white", variantClasses[variant])}>
+    <span
+      ref={ref}
+      aria-hidden="true"
+      className={classNames("text-df-white", variantClasses[variant])}
+    >
       {children}
     </span>
   );

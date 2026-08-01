@@ -2,12 +2,14 @@ import type { HeadlineWordContent } from "./components/Headline/Headline";
 
 type HeroContent = {
   wordmark: string;
+  taglineAriaLabel: string;
   headline: readonly HeadlineWordContent[];
   cta: { label: string; href: string };
 };
 
 export const heroContent = {
   wordmark: "Dreamfluid Labs",
+  taglineAriaLabel: "An engine for vision",
   headline: [
     { text: "An", variant: "sans", element: { number: "19", label: "Dreamfluid" } },
     { text: "engine", variant: "pixel" },

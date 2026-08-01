@@ -13,7 +13,11 @@ export const Hero = () => (
     <HeroBackdropSection />
     <div className="relative z-10 flex flex-col items-center gap-6 px-6 text-center">
       <Wordmark className="opacity-0 animate-fade-in">{heroContent.wordmark}</Wordmark>
-      <Headline className="opacity-0 animate-fade-in-delay-1" words={heroContent.headline} />
+      <Headline
+        className="opacity-0 animate-fade-in-delay-1"
+        taglineAriaLabel={heroContent.taglineAriaLabel}
+        words={heroContent.headline}
+      />
       <Button
         href={heroContent.cta.href}
         className="opacity-0 animate-fade-in-delay-2 mt-4"

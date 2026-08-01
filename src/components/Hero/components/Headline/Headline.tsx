@@ -9,12 +9,14 @@ export type HeadlineWordContent = {
 };
 
 type HeadlineProps = {
+  taglineAriaLabel: string;
   words: readonly HeadlineWordContent[];
   className?: string;
 };
 
-export const Headline = ({ words, className }: HeadlineProps) => (
+export const Headline = ({ taglineAriaLabel, words, className }: HeadlineProps) => (
   <p
+    aria-label={taglineAriaLabel}
     className={classNames(
       "flex flex-nowrap items-baseline justify-center gap-x-[0.18em] text-[clamp(1.75rem,7vw,5.5rem)]",
       className,

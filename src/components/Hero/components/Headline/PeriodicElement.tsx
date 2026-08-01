@@ -15,8 +15,8 @@ const cardShell =
   "pointer-events-none absolute -inset-x-[0.24em] -top-[0.26em] -bottom-[0.36em] rounded-[0.14em] border border-df-white/70";
 
 // Decorative periodic-table chrome (atomic number + element name). Purely
-// visual, so it's hidden from assistive tech — the headline word itself carries
-// the meaning.
+// visual, so it's hidden from assistive tech — the Headline's aria-label
+// carries the meaning.
 const CardChrome = ({ number, label }: ElementBadge) => (
   <>
     <span
