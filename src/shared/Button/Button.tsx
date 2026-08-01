@@ -21,8 +21,18 @@ type ButtonProps = {
 // as a reliable, high-contrast focus indicator (a glow alone is too easy to
 // miss). The offset keeps the ring visible even on the white fill by leaving a
 // gap of the dark backdrop between the button and the outline.
+// Size scales fluidly with the viewport rather than stepping at a breakpoint,
+// matching the headline's clamp() treatment. Each axis grows from its phone
+// floor (~375px: 13px text, 16/8px padding) to its ceiling at ~1120px, where
+// all four land together on the full desktop size (16px text, 24/12px padding).
+//
+// The visible pill is allowed to shrink below the 44px touch minimum on phones;
+// the tap target doesn't. An invisible centred ::after overlay holds the hit
+// area at >=44px independent of the pill, so small screens keep the tighter look
+// without becoming hard to hit. It's centred+translated rather than inset so it
+// can overflow the pill on both axes.
 const baseClasses =
-  "inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-base font-medium tracking-wide transition duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-df-white";
+  "relative inline-flex items-center justify-center gap-[clamp(0.375rem,0.3rem_+_0.3vw,0.5rem)] rounded-full px-[clamp(1rem,0.8rem_+_1vw,1.5rem)] py-[clamp(0.5rem,0.4rem_+_0.5vw,0.75rem)] text-[clamp(0.8125rem,0.72rem_+_0.4vw,1rem)] font-medium tracking-wide transition duration-300 after:absolute after:left-1/2 after:top-1/2 after:h-full after:w-full after:min-h-[44px] after:min-w-[44px] after:-translate-x-1/2 after:-translate-y-1/2 after:content-[''] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-df-white";
 
 const variantClasses: Record<ButtonVariant, string> = {
   // Primary CTA: solid fill, neutral white bloom on hover/focus.
