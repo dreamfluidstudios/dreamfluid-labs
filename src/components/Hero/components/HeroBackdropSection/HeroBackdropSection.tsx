@@ -4,36 +4,40 @@
 // it. Restore this import + the <GrainOverlay /> below to bring it back.
 // import { GrainOverlay } from "@/components/GrainOverlay/GrainOverlay";
 import { useEffect, useRef, useState, type RefObject } from "react";
+import dynamic from "next/dynamic";
 import { classNames } from "@/utils/classNames";
 import { TileField } from "@/components/TileField/TileField";
 import type { TilePointerSpace } from "@/components/TileField/hooks/useTileField";
 import { LensField } from "@/components/LensField/LensField";
-import { ZoomBlurField } from "@/components/ZoomBlurField/ZoomBlurField";
 
-// Hero WebGL pass: lens arcs, zoom-blur peephole, or both stacked
-// (zoom underneath, lens arcs on top). Override with ?backdrop=lens|zoom|both.
+// Zoom stays out of the default lens chunk — only fetched for ?backdrop=zoom.
+const ZoomBlurField = dynamic(
+  () =>
+    import("@/components/ZoomBlurField/ZoomBlurField").then((m) => ({
+      default: m.ZoomBlurField,
+    })),
+  { ssr: false },
+);
+
+// Hero WebGL pass: lens arcs (default) or zoom-blur peephole.
+// Override with ?backdrop=lens|zoom.
 //
-// TODO(both-mode): Come back to stacked lens+zoom compositing.
-// - Black outline / halo still rings the lens fringe when DEFAULT is "both"
-//   (soft fringe over the zoom underlay; fringe-only overlay + bulge=1 helped
-//   center shadows but didn’t kill the outline).
-// - Earlier attempts: opaque underlay bed, arc cutouts, sharp-under-bulge mix,
-//   luminance-gated ridge bed — each fixed one artifact and created another.
-// - Likely next: additive / premultiplied fringe blend, or a single combined
-//   pass so the two canvases don’t SRC_ALPHA over each other.
-type BackdropMode = "lens" | "zoom" | "both";
+// TODO(both-mode): Stacked lens+zoom is shelved — compositing still left a
+// black outline / halo on the fringe. Ignore ?backdrop=both for now (falls
+// back to lens). Likely next: additive / premultiplied fringe, or one pass.
+type BackdropMode = "lens" | "zoom";
 const DEFAULT_BACKDROP: BackdropMode = "lens";
 
 const resolveBackdrop = (): BackdropMode => {
   if (typeof window === "undefined") return DEFAULT_BACKDROP;
   const q = new URLSearchParams(window.location.search).get("backdrop");
-  return q === "zoom" || q === "lens" || q === "both" ? q : DEFAULT_BACKDROP;
+  // "both" intentionally ignored until stacked compositing is solid.
+  return q === "zoom" || q === "lens" ? q : DEFAULT_BACKDROP;
 };
 
 // The hero's backdrop. TileField paints into a shared canvas inside the hero
 // box; WebGL field(s) are portaled + viewport-fixed so they can sit over later
-// sections. When WebGL comes up the DOM tiles crossfade out. In "both" mode
-// we wait until each pass is ready before hiding TileField. Pointer space
+// sections. When WebGL comes up the DOM tiles crossfade out. Pointer space
 // flips to "viewport" with the field so hover tracks the fixed image.
 export const HeroBackdropSection = ({
   heroRef,
@@ -49,14 +53,9 @@ export const HeroBackdropSection = ({
   const [zoomActive, setZoomActive] = useState(false);
   const [backdrop, setBackdrop] = useState<BackdropMode>(DEFAULT_BACKDROP);
 
-  const showLens = backdrop === "lens" || backdrop === "both";
-  const showZoom = backdrop === "zoom" || backdrop === "both";
-  const fieldActive =
-    backdrop === "both"
-      ? lensActive && zoomActive
-      : backdrop === "zoom"
-        ? zoomActive
-        : lensActive;
+  const showLens = backdrop === "lens";
+  const showZoom = backdrop === "zoom";
+  const fieldActive = showZoom ? zoomActive : lensActive;
 
   useEffect(() => {
     setBackdrop(resolveBackdrop());
@@ -87,9 +86,6 @@ export const HeroBackdropSection = ({
           heroRef={heroRef}
           focusRef={focusRef}
           onActiveChange={setZoomActive}
-          // Full tile bed (no peephole clip) so outer cells stay visible
-          // under arcs-only lens.
-          underlay={backdrop === "both"}
         />
       )}
       {showLens && (
@@ -98,8 +94,6 @@ export const HeroBackdropSection = ({
           heroRef={heroRef}
           focusRef={focusRef}
           onActiveChange={setLensActive}
-          // Arcs-only so zoom's outer blur isn't buried under a full scene fill.
-          overlay={backdrop === "both"}
         />
       )}
     </>

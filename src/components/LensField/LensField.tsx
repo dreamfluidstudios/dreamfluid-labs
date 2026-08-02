@@ -15,12 +15,9 @@ import { useLensField } from "./hooks/useLensField";
 // Scroll progress tracks heroRef; arc radii track focusRef (intro copy oval).
 // Empty areas are transparent — see the shader alpha path.
 //
-// When overlay is set (stacked with ZoomBlurField), only the arcs paint so the
-// zoom peephole's outer blur stays visible between/outside the bands.
-//
 // WebGL init takes a frame or two, so the canvas starts invisible and fades in
-// once the first frame is painted — no pop-in. Lazy-loading would only push
-// that later; keep the eager mount + soft reveal.
+// once the first frame is painted — no pop-in. Eager mount + soft reveal
+// (ZoomBlurField is the lazy-loaded backdrop alternative).
 //
 // If WebGL is unavailable the canvas stays blank and onActiveChange never
 // fires, so the underlying TileField DOM layers remain the visible fallback.
@@ -111,7 +108,6 @@ const LensCanvas = ({
       ref={canvasRef}
       aria-hidden="true"
       className={classNames(
-        // Above ZoomBlurField so arcs sit on the peephole (?backdrop=both).
         "pointer-events-none fixed inset-0 z-[2] h-full w-full",
         visible ? "opacity-100" : "opacity-0",
         !reduced && "transition-opacity duration-700 ease-out",

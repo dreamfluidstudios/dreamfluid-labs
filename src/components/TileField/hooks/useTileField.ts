@@ -10,6 +10,7 @@ import {
   TILE_SWEEP_EVENT,
   type TileRippleDetail,
 } from "../utils/rippleEvents";
+import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 // Must match the ambient grid's background-size so lit tiles sit exactly on its lines.
 export const CELL = 72;
@@ -83,9 +84,13 @@ export const useTileField = (
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const profile = resolveDeviceProfile();
+    if (profile.reducedMotion) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Hover trails / click ripples are desktop-only. Real touch and
+    // ?device=touch / FORCE_DEVICE share this gate so emulation matches phones.
+    const pointerInteractive = profile.finePointer;
 
     const tiles = new Map<number, Tile>();
     const ripples: Ripple[] = [];
@@ -135,8 +140,19 @@ export const useTileField = (
     };
 
     const resize = () => {
+      const prevW = width;
+      const prevH = height;
       measure();
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // Origin-only changes (scroll) shouldn't wipe the bitmap — that flash
+      // shows through the lens texture on the next upload.
+      if (
+        prevW > 0 &&
+        Math.round(prevW) === Math.round(width) &&
+        Math.round(prevH) === Math.round(height)
+      ) {
+        return;
+      }
+      const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -145,6 +161,9 @@ export const useTileField = (
       tiles.clear();
       ripples.length = 0;
       ctx.clearRect(0, 0, width, height);
+      // Resume an in-flight idle sweep so the source isn't stuck empty.
+      if (sweeping && !sweep) scheduleSweep();
+      wake();
     };
 
     const light = (c: number, r: number, peak: number, decay: number) => {
@@ -226,7 +245,7 @@ export const useTileField = (
     };
 
     const move = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse") return;
+      if (!pointerInteractive || e.pointerType !== "mouse") return;
       // Over a button/link the trail pauses, and the tile the cursor arrived
       // from is released so it fades out instead of staying lit beneath it.
       if (isInteractive(e.target)) {
@@ -261,7 +280,8 @@ export const useTileField = (
     };
 
     const down = (e: PointerEvent) => {
-      if (e.pointerType !== "mouse" || e.button !== 0) return;
+      if (!pointerInteractive || e.pointerType !== "mouse" || e.button !== 0)
+        return;
       // Clicks on interactive elements act, they don't ripple.
       if (isInteractive(e.target)) return;
       const { x, y } = toLocal(e.clientX, e.clientY);
@@ -310,11 +330,13 @@ export const useTileField = (
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
     window.addEventListener("scroll", measure, { passive: true });
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerdown", down);
+    if (pointerInteractive) {
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerdown", down);
+      document.documentElement.addEventListener("pointerleave", leave);
+    }
     window.addEventListener(TILE_RIPPLE_EVENT, onRippleEvent);
     window.addEventListener(TILE_SWEEP_EVENT, onSweepStart);
-    document.documentElement.addEventListener("pointerleave", leave);
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(sweepTimer);

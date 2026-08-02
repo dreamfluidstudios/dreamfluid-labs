@@ -7,19 +7,21 @@ import {
 import { ZOOM_BLUR } from "../zoomBlur.presets";
 import { CELL } from "@/components/TileField/hooks/useTileField";
 import { LENS_FOCUS } from "@/components/LensField/lensField.presets";
+import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 // Viewport-fixed OGL pass (portaled to body) that samples the TileField canvas
 // and applies a radial zoom blur + edge CA around the intro focus. Same
 // handoff contract as useLensField: onActiveChange(true) only after WebGL is up.
 //
 // Focus oval matches LensField so blur falloff lines up with the copy.
-// Underlay = full bed for stacking under fringe-only lens arcs.
+// Budgets (DPR, FPS, samples) follow resolveDeviceProfile.
 export const useZoomBlurField = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   sourceRef: RefObject<HTMLCanvasElement | null>,
   heroRef: RefObject<HTMLElement | null>,
   focusRef: RefObject<HTMLElement | null>,
   onActiveChange?: (active: boolean) => void,
+  // Kept for a future stacked lens path; unused while both-mode is shelved.
   underlay = false,
 ) => {
   useEffect(() => {
@@ -29,11 +31,21 @@ export const useZoomBlurField = (
     const focus = focusRef.current;
     if (!canvas || !source || !hero || !focus) return;
 
+    const profile = resolveDeviceProfile();
+    const reduced = profile.reducedMotion;
+    const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
+    const frameInterval = 1000 / Math.max(profile.targetFps, 1);
+    const preset = {
+      ...ZOOM_BLUR,
+      samples: profile.zoomSamples,
+      chroma: profile.cheapShaders ? 0 : ZOOM_BLUR.chroma,
+    };
+
     let renderer: Renderer;
     try {
       renderer = new Renderer({
         canvas,
-        dpr: Math.min(window.devicePixelRatio || 1, 2),
+        dpr,
         alpha: true,
         antialias: false,
         premultipliedAlpha: false,
@@ -45,10 +57,6 @@ export const useZoomBlurField = (
     if (!gl || gl.isContextLost()) return;
     gl.clearColor(0, 0, 0, 0);
 
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-
     const texture = new Texture(gl, {
       generateMipmaps: false,
       premultiplyAlpha: false,
@@ -56,7 +64,7 @@ export const useZoomBlurField = (
     const geometry = new Triangle(gl);
     const program = new Program(gl, {
       vertex: ZOOM_BLUR_VERTEX,
-      fragment: buildZoomBlurFragment(ZOOM_BLUR),
+      fragment: buildZoomBlurFragment(preset),
       uniforms: {
         tMap: { value: texture },
         uResolution: { value: [1, 1] },
@@ -65,12 +73,12 @@ export const useZoomBlurField = (
         uFocusCenter: { value: [0, 0] },
         uFocusRadius: { value: LENS_FOCUS.minRadius },
         uFocusStretch: { value: LENS_FOCUS.stretch },
-        uBlurStrength: { value: reduced ? 0 : ZOOM_BLUR.blurStrength },
-        uChroma: { value: reduced ? 0 : ZOOM_BLUR.chroma },
-        uVignette: { value: ZOOM_BLUR.vignette },
-        uVignetteSoft: { value: ZOOM_BLUR.vignetteSoft },
-        uInnerSharp: { value: ZOOM_BLUR.innerSharp },
-        uBlurRim: { value: ZOOM_BLUR.blurRim },
+        uBlurStrength: { value: reduced ? 0 : preset.blurStrength },
+        uChroma: { value: reduced ? 0 : preset.chroma },
+        uVignette: { value: preset.vignette },
+        uVignetteSoft: { value: preset.vignetteSoft },
+        uInnerSharp: { value: preset.innerSharp },
+        uBlurRim: { value: preset.blurRim },
         uScroll: { value: 0 },
         uUnderlay: { value: underlay ? 1 : 0 },
       },
@@ -84,6 +92,8 @@ export const useZoomBlurField = (
     const mesh = new Mesh(gl, { geometry, program });
 
     let raf = 0;
+    let lastDraw = 0;
+    let heroOffscreen = false;
 
     const syncMapSize = () => {
       const w = source.clientWidth || source.getBoundingClientRect().width;
@@ -128,6 +138,15 @@ export const useZoomBlurField = (
       program.uniforms.uFocusStretch.value = stretch;
     };
 
+    const sampleScroll = () => {
+      const rect = hero.getBoundingClientRect();
+      const h = Math.max(rect.height, 1);
+      const raw = Math.min(Math.max(-rect.top / h, 0), 1);
+      const eased = raw * raw * (3.0 - 2.0 * raw);
+      program.uniforms.uScroll.value = reduced ? 0 : eased;
+      return raw;
+    };
+
     const render = () => {
       updateFocus();
       if (source.width > 0 && source.height > 0) {
@@ -137,38 +156,60 @@ export const useZoomBlurField = (
       renderer.render({ scene: mesh });
     };
 
+    const stopLoop = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
     const loop = () => {
-      render();
+      raf = 0;
+      if (document.hidden) return;
+
+      const raw = sampleScroll();
+      if (!reduced && raw >= 1) {
+        if (!heroOffscreen) {
+          heroOffscreen = true;
+          render();
+        }
+        return;
+      }
+      heroOffscreen = false;
+
+      const now = performance.now();
+      if (now - lastDraw >= frameInterval) {
+        lastDraw = now;
+        render();
+      }
       raf = requestAnimationFrame(loop);
     };
 
-    const updateScroll = () => {
-      const rect = hero.getBoundingClientRect();
-      const h = Math.max(rect.height, 1);
-      let p = -rect.top / h;
-      p = Math.min(Math.max(p, 0), 1);
-      p = p * p * (3.0 - 2.0 * p);
-      program.uniforms.uScroll.value = reduced ? 0 : p;
-      updateFocus();
+    const ensureLoop = () => {
+      if (reduced || document.hidden || raf) return;
+      lastDraw = 0;
+      raf = requestAnimationFrame(loop);
+    };
+
+    const onScroll = () => {
+      if (heroOffscreen || !raf) ensureLoop();
     };
 
     const resize = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
+      // setSize clears the drawing buffer — paint immediately (see useLensField).
       renderer.setSize(w, h);
       program.uniforms.uResolution.value = [w, h];
       syncMapSize();
-      updateScroll();
-      if (reduced) render();
+      sampleScroll();
+      updateFocus();
+      lastDraw = performance.now();
+      render();
+      if (!reduced) ensureLoop();
     };
 
     const onVisibility = () => {
-      if (document.hidden) {
-        cancelAnimationFrame(raf);
-        raf = 0;
-      } else if (!reduced && !raf) {
-        raf = requestAnimationFrame(loop);
-      }
+      if (document.hidden) stopLoop();
+      else ensureLoop();
     };
 
     resize();
@@ -177,18 +218,18 @@ export const useZoomBlurField = (
     const focusObserver = new ResizeObserver(updateFocus);
     focusObserver.observe(focus);
     window.addEventListener("resize", resize);
-    window.addEventListener("scroll", updateScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
-    if (!reduced) raf = requestAnimationFrame(loop);
+    if (!reduced) ensureLoop();
     else render();
     onActiveChange?.(true);
 
     return () => {
-      cancelAnimationFrame(raf);
+      stopLoop();
       sourceObserver.disconnect();
       focusObserver.disconnect();
       window.removeEventListener("resize", resize);
-      window.removeEventListener("scroll", updateScroll);
+      window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", onVisibility);
       onActiveChange?.(false);
       program.remove();

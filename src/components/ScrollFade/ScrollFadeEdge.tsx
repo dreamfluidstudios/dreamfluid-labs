@@ -12,7 +12,9 @@ export const ScrollFadeEdge = ({ className }: { className?: string }) => (
       // above the top edge so frost covers content as it arrives / leaves.
       "pointer-events-none absolute inset-x-0 top-0 z-[1] h-[min(42vh,22rem)] -translate-y-[18%]",
       "bg-gradient-to-b from-transparent via-df-pure-black/45 to-df-pure-black/75",
+      // Full frost on desktop; lighter on real/forced touch (html[data-device]).
       "backdrop-blur-2xl backdrop-brightness-75 backdrop-saturate-150",
+      "[:root[data-device=touch]_&]:backdrop-blur-md [:root[data-device=touch]_&]:backdrop-saturate-100",
       "[mask-image:linear-gradient(to_bottom,transparent_0%,rgba(0,0,0,0.35)_18%,black_55%,black_100%)]",
       className,
     )}

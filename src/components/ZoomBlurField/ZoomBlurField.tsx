@@ -7,10 +7,7 @@ import { useZoomBlurField } from "./hooks/useZoomBlurField";
 
 // Radial zoom-blur peephole over the hero backdrop. Mirrors LensField's
 // portal + fixed canvas shell; samples TileField and frames a soft circular
-// aperture around the intro focus. Enable via ?backdrop=zoom|both.
-//
-// When underlay is set (stacked under lens arcs), skips the peephole cutout
-// and keeps a full radial tile bed so outer cells stay visible.
+// aperture around the intro focus. Enable via ?backdrop=zoom (lazy-loaded).
 export const ZoomBlurField = ({
   source,
   heroRef,
@@ -88,7 +85,6 @@ const ZoomBlurCanvas = ({
       ref={canvasRef}
       aria-hidden="true"
       className={classNames(
-        // Under LensField arcs; owns the outer radial blur (?backdrop=both).
         "pointer-events-none fixed inset-0 z-[1] h-full w-full",
         visible ? "opacity-100" : "opacity-0",
         !reduced && "transition-opacity duration-700 ease-out",

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DeviceProfileSync } from "@/components/DeviceProfileSync/DeviceProfileSync";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-df-pure-black text-df-white font-sans antialiased min-h-screen">
+        <DeviceProfileSync />
         {children}
       </body>
     </html>

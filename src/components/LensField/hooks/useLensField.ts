@@ -11,12 +11,16 @@ import {
   resolveLensPreset,
 } from "../lensField.presets";
 import { CELL } from "@/components/TileField/hooks/useTileField";
+import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 // Drives the lens canvas: a viewport-fixed OGL pass (portaled to body) that
 // re-uploads the TileField canvas as a texture each frame. Sized from the
 // window; scroll progress from the hero section so the ring can spin/expand
 // until that section leaves the viewport. Arc radii track an oval fitted to
 // focusRef (intro copy + CTAs) so the ring surrounds the text on any viewport.
+//
+// Budgets (DPR, FPS, drift, cheap shaders) come from resolveDeviceProfile —
+// real touch devices and ?device=touch / FORCE_DEVICE share the same path.
 //
 // onActiveChange(true) fires only once WebGL is actually up, so the caller can
 // keep TileField's DOM layers visible as the no-WebGL fallback until then.
@@ -26,7 +30,7 @@ export const useLensField = (
   heroRef: RefObject<HTMLElement | null>,
   focusRef: RefObject<HTMLElement | null>,
   onActiveChange?: (active: boolean) => void,
-  // When true, only the fringe arcs composite — ZoomBlur owns the backdrop.
+  // Kept for a future stacked zoom path; unused while both-mode is shelved.
   overlay = false,
 ) => {
   useEffect(() => {
@@ -36,6 +40,13 @@ export const useLensField = (
     const focus = focusRef.current;
     if (!canvas || !source || !hero || !focus) return;
 
+    const profile = resolveDeviceProfile();
+    const reduced = profile.reducedMotion;
+    const finePointer = profile.enablePointerParallax;
+    const idleDrift = profile.enableIdleDrift;
+    const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
+    const frameInterval = 1000 / Math.max(profile.targetFps, 1);
+
     // Transparent clear so empty lens areas composite over later sections.
     // Straight (non-premultiplied) alpha: OGL's transparent programs blend with
     // SRC_ALPHA / ONE_MINUS_SRC_ALPHA, which would square a premultiplied
@@ -44,7 +55,7 @@ export const useLensField = (
     try {
       renderer = new Renderer({
         canvas,
-        dpr: Math.min(window.devicePixelRatio || 1, 2),
+        dpr,
         alpha: true,
         antialias: false,
         premultipliedAlpha: false,
@@ -74,7 +85,7 @@ export const useLensField = (
         uCell: { value: CELL },
         uWarp: { value: preset.warp },
         uBulge: { value: bulge },
-        uChroma: { value: preset.chroma },
+        uChroma: { value: profile.cheapShaders ? 0 : preset.chroma },
         uTintOuter: { value: preset.tintOuter },
         uTintInner: { value: preset.tintInner },
         uTintStrength: { value: preset.tintStrength },
@@ -82,10 +93,14 @@ export const useLensField = (
         uScrollRotate: { value: LENS_SCROLL.rotate },
         uScrollExpand: { value: LENS_SCROLL.expand },
         uPointer: { value: [0, 0] },
-        uPointerParallax: { value: LENS_POINTER.parallax },
-        uPointerTilt: { value: LENS_POINTER.tilt },
-        uPointerRotate: { value: LENS_POINTER.rotate },
-        uGrainAmount: { value: LENS_GRAIN.amount },
+        uPointerParallax: {
+          value: finePointer ? LENS_POINTER.parallax : 0,
+        },
+        uPointerTilt: { value: finePointer ? LENS_POINTER.tilt : 0 },
+        uPointerRotate: { value: finePointer ? LENS_POINTER.rotate : 0 },
+        uGrainAmount: {
+          value: profile.cheapShaders ? 0 : LENS_GRAIN.amount,
+        },
         uGrainScale: { value: LENS_GRAIN.scale },
         uTime: { value: 0 },
         uFocusCenter: { value: [0, 0] },
@@ -106,17 +121,9 @@ export const useLensField = (
     }
     const mesh = new Mesh(gl, { geometry, program });
 
-    // With reduced motion the tile canvas never animates (useTileField no-ops),
-    // so a static render per resize is enough — no animation loop.
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    // Mouse perspective only on fine pointers — skip coarse/touch so mobile
-    // doesn't get a stuck half-tilt from the last tap.
-    const finePointer = window.matchMedia(
-      "(hover: hover) and (pointer: fine)",
-    ).matches;
     let raf = 0;
+    let lastDraw = 0;
+    let heroOffscreen = false;
     const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
     let pointerTime = performance.now();
     let lastPointerMove = performance.now();
@@ -152,8 +159,7 @@ export const useLensField = (
       const stretch =
         LENS_FOCUS.stretchNarrow +
         (LENS_FOCUS.stretch - LENS_FOCUS.stretchNarrow) * stretchT;
-      const padding =
-        LENS_FOCUS.padding * (0.65 + 0.35 * stretchT);
+      const padding = LENS_FOCUS.padding * (0.65 + 0.35 * stretchT);
 
       const cx = rect.left + rect.width * 0.5;
       const cy = rect.top + rect.height * 0.5;
@@ -176,6 +182,18 @@ export const useLensField = (
       program.uniforms.uArcScale.value = arcScale;
     };
 
+    // Sample every frame (not only on scroll events) so fixed WebGL stays
+    // locked to the page on phones where scroll events lag the compositor.
+    // Returns raw 0..1 progress before smoothstep (for off-screen pause).
+    const sampleScroll = () => {
+      const rect = hero.getBoundingClientRect();
+      const h = Math.max(rect.height, 1);
+      const raw = Math.min(Math.max(-rect.top / h, 0), 1);
+      const eased = raw * raw * (3.0 - 2.0 * raw);
+      program.uniforms.uScroll.value = reduced ? 0 : eased;
+      return raw;
+    };
+
     const render = () => {
       updateFocus();
       const now = performance.now();
@@ -184,10 +202,10 @@ export const useLensField = (
 
       // Idle Lissajous folds into the catch-up *target*, so the ring yields
       // into drift (and back to the mouse) with the same lag as a cursor
-      // re-entering from off-screen.
+      // re-entering from off-screen. Desktop / fine-pointer only.
       let driftX = 0;
       let driftY = 0;
-      if (!reduced && LENS_DRIFT.amplitude > 0) {
+      if (!reduced && idleDrift && LENS_DRIFT.amplitude > 0) {
         const idleSec = (now - lastPointerMove) / 1000;
         const want = idleSec > LENS_DRIFT.idleAfter ? 1 : 0;
         const tau = want > driftMix ? LENS_DRIFT.blendIn : LENS_DRIFT.blendOut;
@@ -214,7 +232,7 @@ export const useLensField = (
         program.uniforms.uPointer.value = [pointer.x, pointer.y];
       }
 
-      if (!reduced && LENS_GRAIN.fps > 0) {
+      if (!reduced && !profile.cheapShaders && LENS_GRAIN.fps > 0) {
         program.uniforms.uTime.value =
           ((now - grainStarted) / 1000) * LENS_GRAIN.fps;
       }
@@ -225,8 +243,37 @@ export const useLensField = (
       renderer.render({ scene: mesh });
     };
 
+    const stopLoop = () => {
+      cancelAnimationFrame(raf);
+      raf = 0;
+    };
+
     const loop = () => {
-      render();
+      raf = 0;
+      if (document.hidden) return;
+
+      const raw = sampleScroll();
+      if (!reduced && raw >= 1) {
+        if (!heroOffscreen) {
+          heroOffscreen = true;
+          render();
+        }
+        return;
+      }
+      heroOffscreen = false;
+
+      const now = performance.now();
+      if (now - lastDraw >= frameInterval) {
+        lastDraw = now;
+        render();
+      }
+      raf = requestAnimationFrame(loop);
+    };
+
+    const ensureLoop = () => {
+      if (reduced || document.hidden || raf) return;
+      pointerTime = performance.now();
+      lastDraw = 0;
       raf = requestAnimationFrame(loop);
     };
 
@@ -249,37 +296,30 @@ export const useLensField = (
       lastPointerMove = performance.now();
     };
 
-    // 0 while the hero fills the viewport; 1 once its bottom has cleared the
-    // top edge (header fully out of sight).
-    const updateScroll = () => {
-      const rect = hero.getBoundingClientRect();
-      const h = Math.max(rect.height, 1);
-      let p = -rect.top / h;
-      p = Math.min(Math.max(p, 0), 1);
-      p = p * p * (3.0 - 2.0 * p); // smoothstep
-      program.uniforms.uScroll.value = reduced ? 0 : p;
-      updateFocus();
+    const onScroll = () => {
+      // Wake the loop when the hero re-enters after an off-screen pause.
+      // Live sampling still happens inside rAF while the loop is running.
+      if (heroOffscreen || !raf) ensureLoop();
     };
 
     const resize = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
+      // setSize clears the drawing buffer — paint this frame immediately so
+      // touch's 30fps budget can't leave a transparent flash until the next tick.
       renderer.setSize(w, h);
       program.uniforms.uResolution.value = [w, h];
       syncMapSize();
-      updateScroll();
-      if (reduced) render();
+      sampleScroll();
+      updateFocus();
+      lastDraw = performance.now();
+      render();
+      if (!reduced) ensureLoop();
     };
 
-    // Don't burn GPU time while the tab is hidden.
     const onVisibility = () => {
-      if (document.hidden) {
-        cancelAnimationFrame(raf);
-        raf = 0;
-      } else if (!reduced && !raf) {
-        pointerTime = performance.now();
-        raf = requestAnimationFrame(loop);
-      }
+      if (document.hidden) stopLoop();
+      else ensureLoop();
     };
 
     resize();
@@ -288,22 +328,23 @@ export const useLensField = (
     const focusObserver = new ResizeObserver(updateFocus);
     focusObserver.observe(focus);
     window.addEventListener("resize", resize);
-    window.addEventListener("scroll", updateScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
     // Hold the last pointer pose when the cursor leaves the page — no snap
     // back to center.
     if (finePointer && !reduced) {
       window.addEventListener("pointermove", onPointerMove, { passive: true });
     }
-    if (!reduced) raf = requestAnimationFrame(loop);
+    if (!reduced) ensureLoop();
+    else render();
     onActiveChange?.(true);
 
     return () => {
-      cancelAnimationFrame(raf);
+      stopLoop();
       sourceObserver.disconnect();
       focusObserver.disconnect();
       window.removeEventListener("resize", resize);
-      window.removeEventListener("scroll", updateScroll);
+      window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onPointerMove);
       onActiveChange?.(false);

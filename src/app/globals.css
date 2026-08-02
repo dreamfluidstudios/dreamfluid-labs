@@ -77,6 +77,19 @@ html {
   will-change: opacity, filter;
 }
 
+/* Phone / forced ?device=touch: lighter dissolve — full blur is costly under
+   fixed WebGL layers. data-device lets desktop emulation hit the same path;
+   html[data-device="desktop"] keeps the full blur even on coarse hardware. */
+html[data-device="touch"] .scroll-fade[data-fading="true"] {
+  filter: blur(calc(var(--scroll-fade) * 6px));
+}
+
+@media (hover: none) and (pointer: coarse) {
+  html:not([data-device="desktop"]) .scroll-fade[data-fading="true"] {
+    filter: blur(calc(var(--scroll-fade) * 6px));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scroll-fade,
   .scroll-fade[data-fading="true"] {

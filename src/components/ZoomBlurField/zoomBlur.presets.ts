@@ -1,6 +1,7 @@
 // Taste knobs for the radial zoom-blur peephole. Blur falloff is tied to the
 // same content oval as LensField (focusRef fit). Flip DEFAULT_BACKDROP in
-// HeroBackdropSection, or A/B with ?backdrop=zoom|lens|both.
+// HeroBackdropSection, or A/B with ?backdrop=zoom|lens. Touch profiles lower
+// `samples` via resolveDeviceProfile (both-mode is shelved).
 
 export type ZoomBlurPreset = {
   // Radial sample count (baked into the shader loop at build time).
