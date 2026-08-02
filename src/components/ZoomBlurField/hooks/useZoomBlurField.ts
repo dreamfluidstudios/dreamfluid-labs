@@ -35,7 +35,9 @@ export const useZoomBlurField = (
     const profile = resolveDeviceProfile();
     const reduced = profile.reducedMotion;
     const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
-    const frameInterval = 1000 / Math.max(profile.targetFps, 1);
+    // 0 = every rAF (match display). Positive values throttle for budgets.
+    const frameInterval =
+      profile.targetFps > 0 ? 1000 / profile.targetFps : 0;
     const preset = {
       ...ZOOM_BLUR,
       samples: profile.zoomSamples,
@@ -181,7 +183,7 @@ export const useZoomBlurField = (
       heroOffscreen = false;
 
       const now = performance.now();
-      if (now - lastDraw >= frameInterval) {
+      if (frameInterval <= 0 || now - lastDraw >= frameInterval) {
         lastDraw = now;
         render();
       }

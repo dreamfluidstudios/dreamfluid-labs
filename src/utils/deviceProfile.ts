@@ -10,6 +10,7 @@ export type DeviceProfile = {
   touch: boolean;
   reducedMotion: boolean;
   dprCap: number;
+  // Max WebGL draws per second; 0 = uncapped (every requestAnimationFrame).
   targetFps: number;
   enablePointerParallax: boolean;
   enableIdleDrift: boolean;
@@ -24,14 +25,16 @@ export const FORCE_DEVICE: DeviceKind | null = null;
 
 const DESKTOP_PROFILE = {
   dprCap: 2,
-  targetFps: 60,
+  // 0 = every rAF (follow display refresh). Don't undersample scroll-driven GL.
+  targetFps: 0,
   cheapShaders: false,
   zoomSamples: 10,
 } as const;
 
 const TOUCH_PROFILE = {
   dprCap: 1.25,
-  targetFps: 30,
+  // Same as desktop: vsync via rAF. A 30fps cap made scroll-linked arcs lag.
+  targetFps: 0,
   cheapShaders: true,
   zoomSamples: 5,
 } as const;

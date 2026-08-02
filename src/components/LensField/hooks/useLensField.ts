@@ -52,7 +52,9 @@ export const useLensField = (
     const finePointer = profile.enablePointerParallax;
     const idleDrift = profile.enableIdleDrift;
     const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
-    const frameInterval = 1000 / Math.max(profile.targetFps, 1);
+    // 0 = every rAF (match display). Positive values throttle for budgets.
+    const frameInterval =
+      profile.targetFps > 0 ? 1000 / profile.targetFps : 0;
 
     // Transparent clear so empty lens areas composite over later sections.
     // Straight (non-premultiplied) alpha: OGL's transparent programs blend with
@@ -316,7 +318,7 @@ export const useLensField = (
       heroOffscreen = false;
 
       const now = performance.now();
-      if (now - lastDraw >= frameInterval) {
+      if (frameInterval <= 0 || now - lastDraw >= frameInterval) {
         lastDraw = now;
         render();
       }
