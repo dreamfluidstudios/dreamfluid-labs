@@ -216,7 +216,9 @@ ${arcs.map(arcCall).join("\n")}
     // composites as a black outline over the zoom underlay.
     float bed = fade * (1.0 - step(0.5, uOverlay));
     vec3 lit = col * bed + fringe * uTintStrength;
-    float exitFade = 1.0 - smoothstep(0.58, 0.92, uScroll);
+    // Slightly wider than the old 0.58→0.92 band so the dissolve eases
+    // out instead of dropping once the hero starts leaving.
+    float exitFade = 1.0 - smoothstep(0.48, 0.98, uScroll);
     float peak = max(lit.r, max(lit.g, lit.b));
     float overlayPeak = fringePeak * uTintStrength;
     float presence =

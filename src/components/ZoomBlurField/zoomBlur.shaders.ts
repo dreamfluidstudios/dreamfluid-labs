@@ -122,7 +122,8 @@ ${taps.join("\n")}
     float rim = smoothstep(aperture * 0.55, aperture, ovalDist);
     col *= 1.0 - rim * mix(0.28, 0.0, step(0.5, uUnderlay));
 
-    float exitFade = 1.0 - smoothstep(0.58, 0.92, uScroll);
+    // Match LensField: wider exit band so the dissolve isn't abrupt.
+    float exitFade = 1.0 - smoothstep(0.48, 0.98, uScroll);
     float alpha = veil * exitFade;
     float peak = max(col.r, max(col.g, col.b));
     // Solo: content-shaped alpha. Underlay: solid bed (no tile-shaped holes).

@@ -3,6 +3,7 @@ import { Mesh, Program, Renderer, Texture, Triangle } from "ogl";
 import { buildLensFragment, LENS_VERTEX } from "../lensField.shaders";
 import {
   LENS_ARCS,
+  LENS_DRIFT,
   LENS_FOCUS,
   LENS_GRAIN,
   LENS_POINTER,
@@ -118,6 +119,8 @@ export const useLensField = (
     let raf = 0;
     const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
     let pointerTime = performance.now();
+    let lastPointerMove = performance.now();
+    let driftMix = 0;
     const grainStarted = performance.now();
 
     // CSS px of the TileField canvas — must match the space fillRect uses,
@@ -175,22 +178,45 @@ export const useLensField = (
 
     const render = () => {
       updateFocus();
-      if (finePointer && !reduced) {
-        // Frame-rate-independent catch-up: ring lags the cursor and eases in
-        // over ~catchUp seconds instead of snapping per frame.
-        const now = performance.now();
-        const dt = Math.min(0.05, (now - pointerTime) / 1000);
-        pointerTime = now;
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - pointerTime) / 1000);
+      pointerTime = now;
+
+      // Idle Lissajous folds into the catch-up *target*, so the ring yields
+      // into drift (and back to the mouse) with the same lag as a cursor
+      // re-entering from off-screen.
+      let driftX = 0;
+      let driftY = 0;
+      if (!reduced && LENS_DRIFT.amplitude > 0) {
+        const idleSec = (now - lastPointerMove) / 1000;
+        const want = idleSec > LENS_DRIFT.idleAfter ? 1 : 0;
+        const tau = want > driftMix ? LENS_DRIFT.blendIn : LENS_DRIFT.blendOut;
+        driftMix +=
+          (want - driftMix) * (1 - Math.exp(-dt / Math.max(tau, 0.001)));
+        if (driftMix > 0.001) {
+          const t = (now - grainStarted) / 1000;
+          const a = LENS_DRIFT.amplitude * driftMix;
+          driftX = Math.sin(t * Math.PI * 2 * LENS_DRIFT.freqX) * a;
+          driftY =
+            Math.sin(t * Math.PI * 2 * LENS_DRIFT.freqY + LENS_DRIFT.phaseY) *
+            a;
+        }
+      }
+
+      if (!reduced) {
+        const s = finePointer ? LENS_POINTER.follow : 0;
+        const targetX = pointer.tx * s + driftX;
+        const targetY = pointer.ty * s + driftY;
         const k =
           1 - Math.exp(-dt / Math.max(LENS_POINTER.catchUp, 0.001));
-        pointer.x += (pointer.tx - pointer.x) * k;
-        pointer.y += (pointer.ty - pointer.y) * k;
-        const s = LENS_POINTER.follow;
-        program.uniforms.uPointer.value = [pointer.x * s, pointer.y * s];
+        pointer.x += (targetX - pointer.x) * k;
+        pointer.y += (targetY - pointer.y) * k;
+        program.uniforms.uPointer.value = [pointer.x, pointer.y];
       }
+
       if (!reduced && LENS_GRAIN.fps > 0) {
         program.uniforms.uTime.value =
-          ((performance.now() - grainStarted) / 1000) * LENS_GRAIN.fps;
+          ((now - grainStarted) / 1000) * LENS_GRAIN.fps;
       }
       if (source.width > 0 && source.height > 0) {
         texture.image = source;
@@ -220,6 +246,7 @@ export const useLensField = (
       }
       pointer.tx = (e.clientX / w) * 2 - 1;
       pointer.ty = -((e.clientY / h) * 2 - 1);
+      lastPointerMove = performance.now();
     };
 
     // 0 while the hero fills the viewport; 1 once its bottom has cleared the

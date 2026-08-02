@@ -89,6 +89,23 @@ export const LENS_POINTER = {
   follow: -1 as 1 | -1,
 };
 
+// Ambient Lissajous on the same pointer channel while the cursor is still.
+// Feeds the catch-up target (not the live pose), so idle yields with the
+// same lag as the cursor coming back from off-screen.
+export const LENS_DRIFT = {
+  // Seconds of stillness before idle motion begins.
+  idleAfter: 0.5,
+  // Mix ease — ring lag itself comes from LENS_POINTER.catchUp.
+  blendIn: 0.8,
+  blendOut: 0.45,
+  // Peak pointer-space amplitude (softer than a full swim).
+  amplitude: 1.05,
+  // Incommensurate Hz so the path doesn't loop on itself.
+  freqX: 0.08,
+  freqY: 0.12,
+  phaseY: 1.7,
+};
+
 // Procedural film grain on the arc fringe only (void stays black). amount is
 // the ± modulation depth; scale is noise frequency in screen space; fps is
 // how often the grain pattern reshuffles (0 = static).
