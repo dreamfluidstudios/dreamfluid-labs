@@ -32,9 +32,11 @@ const DESKTOP_PROFILE = {
 } as const;
 
 const TOUCH_PROFILE = {
-  dprCap: 1.25,
+  // 1× CSS pixels — every 0.25 DPR step is ~56% more fragment work.
+  dprCap: 1,
   // Same as desktop: vsync via rAF. A 30fps cap made scroll-linked arcs lag.
   targetFps: 0,
+  // Turns off chroma (3× scene samples) + grain. Needed to hit vsync on scroll.
   cheapShaders: true,
   zoomSamples: 5,
 } as const;

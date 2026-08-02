@@ -231,12 +231,17 @@ ${arcs.map(arcCall).join("\n")}
     if (uOverlay > 0.5) {
       lit = fringe * uTintStrength;
     } else {
-      // Sample the warped scene with a slight per-channel spread, so content
-      // under a bulge picks up its own subtle chromatic split.
-      vec3 base  = scene(vUv + dispUv);
-      vec3 outer = scene(vUv + dispUv * (1.0 + uChroma));
-      vec3 inner = scene(vUv + dispUv * (1.0 - uChroma));
-      vec3 col = vec3(outer.r, base.g, inner.b);
+      // Warped bed. Chroma=0 is a single scene() — mobile relies on this;
+      // three samples at full viewport is what made ProMotion scroll choppy.
+      vec3 col;
+      if (uChroma < 0.001) {
+        col = scene(vUv + dispUv);
+      } else {
+        vec3 base  = scene(vUv + dispUv);
+        vec3 outer = scene(vUv + dispUv * (1.0 + uChroma));
+        vec3 inner = scene(vUv + dispUv * (1.0 - uChroma));
+        col = vec3(outer.r, base.g, inner.b);
+      }
 
       // Radial fade replacing the CSS mask, lifted under the band bulges so
       // they always have visible content to bend.

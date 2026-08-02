@@ -77,13 +77,13 @@ export const useLensField = (
     gl.clearColor(0, 0, 0, 0);
 
     const preset = resolveLensPreset();
-    // Same full lens pass on mobile and desktop. Touch still gets cheaper
-    // budgets via profile (DPR/FPS, grain off, no pointer/drift). Chroma stays
-    // on — the tiny cell-state upload makes the extra samples affordable.
+    // Same full lens pass on mobile and desktop. Touch budgets: DPR 1, grain
+    // off, chroma off (single scene sample — see shader), no pointer/drift.
     const arcsOnly = overlay;
     const blend = resolveLensBlend(arcsOnly);
     // Stacked with zoom: no extra warp halo (bulge 1 = same width as fringe).
     const bulge = arcsOnly ? 1 : preset.bulge;
+    const chroma = arcsOnly || profile.cheapShaders ? 0 : preset.chroma;
     const tileTexture = new Texture(gl, {
       generateMipmaps: false,
       premultiplyAlpha: false,
@@ -109,15 +109,18 @@ export const useLensField = (
         uCell: { value: CELL },
         uWarp: { value: arcsOnly ? 0 : preset.warp },
         uBulge: { value: bulge },
-        uChroma: {
-          value: arcsOnly ? 0 : preset.chroma,
-        },
+        uChroma: { value: chroma },
         uTintOuter: { value: preset.tintOuter },
         uTintInner: { value: preset.tintInner },
         uTintStrength: { value: preset.tintStrength },
         uScroll: { value: 0 },
-        uScrollRotate: { value: LENS_SCROLL.rotate },
-        uScrollExpand: { value: LENS_SCROLL.expand },
+        // Touch: gentler exit so compositor/JS desync is less obvious.
+        uScrollRotate: {
+          value: profile.touch ? LENS_SCROLL.rotate * 0.55 : LENS_SCROLL.rotate,
+        },
+        uScrollExpand: {
+          value: profile.touch ? LENS_SCROLL.expand * 0.65 : LENS_SCROLL.expand,
+        },
         uPointer: { value: [0, 0] },
         uPointerParallax: {
           value: finePointer ? LENS_POINTER.parallax : 0,
@@ -170,6 +173,21 @@ export const useLensField = (
     let driftMix = 0;
     const grainStarted = performance.now();
 
+    // Document-space layout, refreshed on resize — scroll frames only read
+    // window.scrollY (no getBoundingClientRect thrash on the hot path).
+    const layout = {
+      heroTop: 0,
+      heroHeight: 1,
+      focusCx: 0,
+      focusCy: 0,
+      focusW: 0,
+      focusH: 0,
+      vw: 1,
+      vh: 1,
+      stretch: LENS_FOCUS.stretch,
+      padding: LENS_FOCUS.padding,
+    };
+
     // CSS px of the TileField box — must match the sim's cell phase, not any
     // device-pixel bitmap size (state-only mode uses a 1×1 canvas).
     const syncMapSize = () => {
@@ -195,16 +213,20 @@ export const useLensField = (
       uploadedVersion = map.version;
     };
 
-    // Fit the content oval to the intro focus box in the same q-space the
-    // shader uses: q = ((px - vw/2) / vh, (vh/2 - py) / vh). Stretch eases
-    // down on tall/narrow viewports; arc gap/thickness scale with radius.
-    const updateFocus = () => {
-      const rect = focus.getBoundingClientRect();
-      const vh = Math.max(window.innerHeight, 1);
-      const vw = Math.max(window.innerWidth, 1);
-      if (rect.width <= 0 || rect.height <= 0) return;
-
-      const aspect = vw / vh;
+    const captureLayout = () => {
+      const sy = window.scrollY;
+      const sx = window.scrollX;
+      const heroRect = hero.getBoundingClientRect();
+      const focusRect = focus.getBoundingClientRect();
+      layout.heroTop = heroRect.top + sy;
+      layout.heroHeight = Math.max(heroRect.height, 1);
+      layout.focusW = focusRect.width;
+      layout.focusH = focusRect.height;
+      layout.focusCx = focusRect.left + sx + focusRect.width * 0.5;
+      layout.focusCy = focusRect.top + sy + focusRect.height * 0.5;
+      layout.vw = Math.max(window.innerWidth, 1);
+      layout.vh = Math.max(window.innerHeight, 1);
+      const aspect = layout.vw / layout.vh;
       const stretchT = Math.min(
         1,
         Math.max(
@@ -213,17 +235,22 @@ export const useLensField = (
             (LENS_FOCUS.stretchAspectTo - LENS_FOCUS.stretchAspectFrom),
         ),
       );
-      const stretch =
+      layout.stretch =
         LENS_FOCUS.stretchNarrow +
         (LENS_FOCUS.stretch - LENS_FOCUS.stretchNarrow) * stretchT;
-      const padding = LENS_FOCUS.padding * (0.65 + 0.35 * stretchT);
+      layout.padding = LENS_FOCUS.padding * (0.65 + 0.35 * stretchT);
+    };
 
-      const cx = rect.left + rect.width * 0.5;
-      const cy = rect.top + rect.height * 0.5;
+    // Fit the content oval from cached document coords + current scroll.
+    const updateFocus = () => {
+      if (layout.focusW <= 0 || layout.focusH <= 0) return;
+      const { vw, vh, stretch, padding, focusW, focusH } = layout;
+      const cx = layout.focusCx - window.scrollX;
+      const cy = layout.focusCy - window.scrollY;
       const qcx = (cx - vw * 0.5) / vh;
       const qcy = (vh * 0.5 - cy) / vh;
-      const halfW = rect.width * 0.5 / vh + padding;
-      const halfH = rect.height * 0.5 / vh + padding;
+      const halfW = focusW * 0.5 / vh + padding;
+      const halfH = focusH * 0.5 / vh + padding;
       const radius = Math.max(
         LENS_FOCUS.minRadius,
         Math.sqrt((halfW / stretch) ** 2 + halfH ** 2),
@@ -239,13 +266,13 @@ export const useLensField = (
       program.uniforms.uArcScale.value = arcScale;
     };
 
-    // Sample every frame (not only on scroll events) so fixed WebGL stays
-    // locked to the page on phones where scroll events lag the compositor.
+    // scrollY vs cached hero top — avoids layout reads every rAF.
     // Returns raw 0..1 progress before smoothstep (for off-screen pause).
     const sampleScroll = () => {
-      const rect = hero.getBoundingClientRect();
-      const h = Math.max(rect.height, 1);
-      const raw = Math.min(Math.max(-rect.top / h, 0), 1);
+      const raw = Math.min(
+        Math.max((window.scrollY - layout.heroTop) / layout.heroHeight, 0),
+        1,
+      );
       const eased = raw * raw * (3.0 - 2.0 * raw);
       program.uniforms.uScroll.value = reduced ? 0 : eased;
       return raw;
@@ -361,10 +388,11 @@ export const useLensField = (
       const w = window.innerWidth;
       const h = window.innerHeight;
       // setSize clears the drawing buffer — paint this frame immediately so
-      // touch's 30fps budget can't leave a transparent flash until the next tick.
+      // a resize can't leave a transparent flash until the next tick.
       renderer.setSize(w, h);
       program.uniforms.uResolution.value = [w, h];
       syncMapSize();
+      captureLayout();
       sampleScroll();
       updateFocus();
       lastDraw = performance.now();
@@ -380,8 +408,16 @@ export const useLensField = (
     resize();
     const sourceObserver = new ResizeObserver(syncMapSize);
     sourceObserver.observe(source);
-    const focusObserver = new ResizeObserver(updateFocus);
+    const focusObserver = new ResizeObserver(() => {
+      captureLayout();
+      updateFocus();
+    });
     focusObserver.observe(focus);
+    // Hero height can change with URL-bar / dynamic type — keep scroll math honest.
+    const heroObserver = new ResizeObserver(() => {
+      captureLayout();
+    });
+    heroObserver.observe(hero);
     window.addEventListener("resize", resize);
     window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
@@ -398,6 +434,7 @@ export const useLensField = (
       stopLoop();
       sourceObserver.disconnect();
       focusObserver.disconnect();
+      heroObserver.disconnect();
       window.removeEventListener("resize", resize);
       window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", onVisibility);
