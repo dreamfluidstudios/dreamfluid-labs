@@ -32,5 +32,55 @@ html,
 body {
   margin: 0;
   padding: 0;
-  overflow: hidden;
+}
+
+/* Dark-themed scrollbar: graphite thumb on the pure-black page background.
+   `scrollbar-color` covers Firefox + Chromium 121+; the ::-webkit-* rules
+   cover Safari (Chromium ignores them once scrollbar-color is set). */
+html {
+  color-scheme: dark;
+  scrollbar-color: #303030 #000000; /* df-graphite on df-pure-black */
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #303030;
+  border-radius: 999px;
+  border: 2px solid #000000; /* inset the thumb from the track edges */
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6c6e71; /* df-silver */
+}
+
+/* Scroll dissolve: useScrollFade writes --scroll-fade (max of enter/exit,
+   0 → 1) and toggles data-fading. Blur only while fading — a resting blur(0)
+   would still count as `filter` and flatten stacking against the fixed lens. */
+.scroll-fade {
+  --enter-fade: 0;
+  --exit-fade: 0;
+  --scroll-fade: 0;
+  /* Full dissolve at 1 — short viewports need the outgoing section gone. */
+  opacity: calc(1 - var(--scroll-fade));
+}
+
+.scroll-fade[data-fading="true"] {
+  filter: blur(calc(var(--scroll-fade) * 18px));
+  will-change: opacity, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-fade,
+  .scroll-fade[data-fading="true"] {
+    opacity: 1;
+    filter: none;
+  }
 }

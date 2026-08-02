@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { classNames } from "@/utils/classNames";
 
-export type ButtonVariant = "white" | "ghost";
+export type ButtonVariant = "white" | "ghost" | "glass";
 
 type ButtonProps = {
   children: ReactNode;
@@ -42,6 +42,14 @@ const variantClasses: Record<ButtonVariant, string> = {
   // brightens and picks up a faint fill on hover/focus — quieter, no glow.
   ghost:
     "border border-df-silver/40 text-df-white hover:border-df-white/70 hover:bg-df-white/[0.06] focus-visible:border-df-white/70 focus-visible:bg-df-white/[0.06]",
+  // Liquid glass: heavily frosted pane (strong blur + a smoked-grey fill) so
+  // backdrop detail — grid lines, fringe arcs — melts into a soft glow behind
+  // the label instead of fighting its contrast. No border; just a hairline
+  // inset light catch along the top edge. The hover signal is the fill
+  // lifting to a lighter grey, per the "never an opacity drop" rule above.
+  // Keyboard focus keeps the shared outline ring.
+  glass:
+    "bg-df-graphite/80 text-df-white backdrop-blur-2xl backdrop-saturate-150 shadow-[inset_0_0.5px_0_rgba(255,255,255,0.28)] hover:brightness-125 focus-visible:brightness-125",
 };
 
 export const Button = ({

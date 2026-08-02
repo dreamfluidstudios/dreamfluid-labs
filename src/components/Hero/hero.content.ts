@@ -4,6 +4,7 @@ type HeroContent = {
   wordmark: string;
   headline: readonly HeadlineWordContent[];
   cta: { label: string; href: string };
+  secondaryCta: { label: string; href: string };
 };
 
 export const heroContent = {
@@ -15,4 +16,5 @@ export const heroContent = {
     { text: "vision.", variant: "serif" },
   ],
   cta: { label: "Learn More", href: "/comingsoon" },
+  secondaryCta: { label: "Explore Tools", href: "/comingsoon" },
 } as const satisfies HeroContent;

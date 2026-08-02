@@ -1,5 +1,7 @@
 import type { Config } from "tailwindcss";
 import { heroAnimations, heroKeyframes } from "./src/components/Hero/hero.animations";
+import { footerAnimations, footerKeyframes } from "./src/components/Footer/footer.animations";
+import { grainAnimations, grainKeyframes } from "./src/components/GrainOverlay/grain.animations";
 
 const config: Config = {
   content: [
@@ -67,12 +69,16 @@ const config: Config = {
           "20%":           { transform: "translateY(-0.24em)", color: "#FAFAFA" },
         },
         ...heroKeyframes,
+        ...footerKeyframes,
+        ...grainKeyframes,
       },
       animation: {
         "glow-drift-blue": "glow-drift-blue 18s ease-in-out infinite",
         "glow-drift-violet": "glow-drift-violet 22s ease-in-out infinite",
         "loading-dot": "loading-dot 0.9s ease-in-out infinite",
         ...heroAnimations,
+        ...footerAnimations,
+        ...grainAnimations,
       },
     },
   },

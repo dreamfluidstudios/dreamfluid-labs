@@ -51,15 +51,34 @@ const SHADES = SHADE_STOPS.map(({ t, fill, line }) => ({
 // How long a hover-trail tile takes to fade out.
 const FADE_MS = 900;
 
+// Pointer interaction (hover trail, click ripples) stands down over
+// interactive elements — the backdrop shouldn't light up beneath the control
+// the user is aiming at.
+const INTERACTIVE_SELECTOR =
+  'a, button, [role="button"], input, textarea, select, label';
+
+const isInteractive = (target: EventTarget | null) =>
+  !!(target as Element | null)?.closest?.(INTERACTIVE_SELECTOR);
+
 type Shade = (typeof SHADES)[number];
 type Tile = { heat: number; peak: number; decay: number; shade: Shade };
 type Ripple = { start: number; idx: number; tiles: RippleTile[] };
+
+// Where pointer / ripple events are interpreted:
+//  - "element": local to the canvas box (standalone TileField, e.g. /comingsoon)
+//  - "viewport": local to the window — required when a fixed LensField presents
+//    this bitmap as a fullscreen texture, because the DOM canvas may have
+//    scrolled away while the visible grid has not
+export type TilePointerSpace = "element" | "viewport";
 
 // Drives the tile-field canvas: hover lights the tile under the cursor and
 // leaves a fading trail; a click spawns a ripple in the given shape.
 export const useTileField = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   rippleShape: RippleShape,
+  // Ref so the hero can flip to "viewport" when the lens comes up without
+  // tearing down the whole animation loop.
+  pointerSpaceRef?: RefObject<TilePointerSpace>,
 ) => {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -100,6 +119,19 @@ export const useTileField = (
       height = rect.height;
       originX = rect.left;
       originY = rect.top;
+    };
+
+    // Map a viewport-space point into canvas CSS pixels.
+    const toLocal = (clientX: number, clientY: number) => {
+      if (pointerSpaceRef?.current === "viewport") {
+        const vw = Math.max(window.innerWidth, 1);
+        const vh = Math.max(window.innerHeight, 1);
+        return {
+          x: (clientX / vw) * width,
+          y: (clientY / vh) * height,
+        };
+      }
+      return { x: clientX - originX, y: clientY - originY };
     };
 
     const resize = () => {
@@ -195,8 +227,18 @@ export const useTileField = (
 
     const move = (e: PointerEvent) => {
       if (e.pointerType !== "mouse") return;
-      const c = Math.floor((e.clientX - originX) / CELL);
-      const r = Math.floor((e.clientY - originY) / CELL);
+      // Over a button/link the trail pauses, and the tile the cursor arrived
+      // from is released so it fades out instead of staying lit beneath it.
+      if (isInteractive(e.target)) {
+        if (current !== -1) {
+          current = -1;
+          wake();
+        }
+        return;
+      }
+      const { x, y } = toLocal(e.clientX, e.clientY);
+      const c = Math.floor(x / CELL);
+      const r = Math.floor(y / CELL);
       const key = r * cols + c;
       if (key === current) return;
       current = key;
@@ -221,16 +263,17 @@ export const useTileField = (
     const down = (e: PointerEvent) => {
       if (e.pointerType !== "mouse" || e.button !== 0) return;
       // Clicks on interactive elements act, they don't ripple.
-      const target = e.target as Element | null;
-      if (target?.closest?.('a, button, [role="button"], input, textarea, select, label')) return;
-      spawnRipple(e.clientX - originX, e.clientY - originY);
+      if (isInteractive(e.target)) return;
+      const { x, y } = toLocal(e.clientX, e.clientY);
+      spawnRipple(x, y);
     };
 
     const onRippleEvent = (e: Event) => {
       // Event coordinates are viewport-relative (e.g. a card's bounding rect),
       // so map them into the canvas's local space before rippling.
       const { x, y, shape, range } = (e as CustomEvent<TileRippleDetail>).detail;
-      spawnRipple(x - originX, y - originY, shape, range);
+      const local = toLocal(x, y);
+      spawnRipple(local.x, local.y, shape, range);
     };
 
     const startSweep = () => {
@@ -283,5 +326,5 @@ export const useTileField = (
       window.removeEventListener(TILE_SWEEP_EVENT, onSweepStart);
       document.documentElement.removeEventListener("pointerleave", leave);
     };
-  }, [canvasRef, rippleShape]);
+  }, [canvasRef, rippleShape, pointerSpaceRef]);
 };

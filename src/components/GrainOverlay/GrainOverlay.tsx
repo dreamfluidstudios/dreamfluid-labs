@@ -1,15 +1,14 @@
+import type { CSSProperties, ReactNode } from "react";
 import { classNames } from "@/utils/classNames";
 
-// Static film-grain overlay. A fractal-noise texture is generated once by an
-// inline SVG feTurbulence filter, desaturated to neutral grey, and baked into a
-// background-image data URI — so it's a pure CSS layer with no JavaScript and no
-// per-frame work. The browser rasterizes it once and composites it essentially
-// for free, on desktop and mobile alike. As a bonus, the grain dithers the dark
-// gradient behind it, hiding the banding you get on near-black gradients.
+// Film-grain overlay. Fractal noise is generated once by an inline SVG
+// feTurbulence filter, desaturated, and baked into a background-image data URI
+// — pure CSS, no per-frame JS. stitchTiles + matching background-size tile it
+// seamlessly; encodeURIComponent keeps the data URI valid in Firefox.
 //
-// stitchTiles='stitch' + a background-size equal to the SVG tile makes the noise
-// repeat seamlessly. encodeURIComponent keeps the data URI valid across browsers
-// (Firefox is strict about unescaped '#', '%', '<' in SVG data URIs).
+// Full-rect grain (default) will lift near-black areas when blend is "normal"
+// — fine for dithering gradients, bad over pure black. For type on void black,
+// pass clipToText + the label as children so only the glyphs get texture.
 const NOISE_TILE_PX = 180;
 
 const buildNoiseUrl = (baseFrequency: number): string => {
@@ -24,27 +23,73 @@ const buildNoiseUrl = (baseFrequency: number): string => {
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 };
 
+type GrainBlend = "normal" | "overlay" | "soft-light" | "multiply";
+
 type GrainOverlayProps = {
-  // 0–1: how strongly the grain reads. Keep it subtle on dark surfaces — the
-  // noise spans the full tonal range, so a little goes a long way.
+  // 0–1: how strongly the grain reads.
   opacity?: number;
-  // feTurbulence frequency: lower = coarser, chunkier grain; higher = finer.
+  // feTurbulence frequency: lower = coarser; higher = finer.
   baseFrequency?: number;
+  // How the noise composites with what's behind.
+  blend?: GrainBlend;
+  // Stepped background-position jitter — film-grain motion without JS.
+  animated?: boolean;
+  // Clip noise to glyph shapes (pass the same label as children). Keeps the
+  // surrounding void absolute black — no grey band.
+  clipToText?: boolean;
+  children?: ReactNode;
   className?: string;
 };
 
 export const GrainOverlay = ({
   opacity = 0.06,
   baseFrequency = 0.8,
+  blend = "normal",
+  animated = false,
+  clipToText = false,
+  children,
   className,
-}: GrainOverlayProps) => (
-  <div
-    aria-hidden="true"
-    className={classNames("pointer-events-none absolute inset-0", className)}
-    style={{
-      opacity,
-      backgroundImage: buildNoiseUrl(baseFrequency),
-      backgroundSize: `${NOISE_TILE_PX}px ${NOISE_TILE_PX}px`,
-    }}
-  />
-);
+}: GrainOverlayProps) => {
+  const style = {
+    opacity,
+    backgroundImage: buildNoiseUrl(baseFrequency),
+    backgroundSize: `${NOISE_TILE_PX}px ${NOISE_TILE_PX}px`,
+    mixBlendMode: blend,
+    ...(clipToText
+      ? {
+          backgroundClip: "text",
+          WebkitBackgroundClip: "text",
+          color: "transparent",
+          WebkitTextFillColor: "transparent",
+        }
+      : {}),
+  } satisfies CSSProperties;
+
+  if (clipToText) {
+    return (
+      <span
+        aria-hidden="true"
+        className={classNames(
+          "pointer-events-none absolute inset-0 select-none text-center font-[inherit] text-[length:inherit] leading-[inherit]",
+          animated && "motion-safe:animate-grain-shift",
+          className,
+        )}
+        style={style}
+      >
+        {children}
+      </span>
+    );
+  }
+
+  return (
+    <div
+      aria-hidden="true"
+      className={classNames(
+        "pointer-events-none absolute inset-0",
+        animated && "motion-safe:animate-grain-shift",
+        className,
+      )}
+      style={style}
+    />
+  );
+};

@@ -75,6 +75,7 @@ export const heroAnimations = {
   "fade-in": "fade-in 1s ease-out forwards",
   "fade-in-delay-1": "fade-in 1s ease-out 0.2s forwards",
   "fade-in-delay-2": "fade-in 1s ease-out 0.4s forwards",
+  "fade-in-delay-3": "fade-in 1s ease-out 0.6s forwards",
   "word-tilt": "word-tilt 0.9s ease-in-out 1.4s forwards",
   "vision-glow": "vision-glow 2s ease-out 2.4s both",
   "element-slam": "element-slam 0.65s linear 3.2s both",

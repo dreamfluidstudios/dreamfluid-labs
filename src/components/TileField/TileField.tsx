@@ -1,8 +1,13 @@
 "use client";
 
-import { useRef } from "react";
-import { CELL, useTileField } from "./hooks/useTileField";
+import { useRef, type RefObject } from "react";
+import {
+  CELL,
+  useTileField,
+  type TilePointerSpace,
+} from "./hooks/useTileField";
 import type { RippleShape } from "./utils/ripple";
+import { classNames } from "@/utils/classNames";
 
 export type { RippleShape };
 
@@ -11,19 +16,35 @@ export type { RippleShape };
 // fading wake, ripples on click, and glides idle auto-trails on request. The
 // grid lives here — not with the ambient gradients — because it is the unlit
 // bed the canvas tiles light up, sharing the exact CELL size.
+//
+// When a WebGL lens (LensField) presents this field instead, it passes its own
+// canvasRef (to sample the bitmap as a texture). DOM layers can be faded out
+// by the parent while the canvas keeps painting; pointerSpace should flip to
+// "viewport" so hover stays locked to the fixed lens image, not the scrolled
+// DOM box. Standalone use (e.g. /comingsoon) keeps the default "element" space.
 export const TileField = ({
   rippleShape = "round",
+  canvasRef: externalCanvasRef,
+  hidden = false,
+  pointerSpaceRef,
 }: {
   rippleShape?: RippleShape;
+  canvasRef?: RefObject<HTMLCanvasElement | null>;
+  hidden?: boolean;
+  pointerSpaceRef?: RefObject<TilePointerSpace>;
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  useTileField(canvasRef, rippleShape);
+  const internalCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = externalCanvasRef ?? internalCanvasRef;
+  useTileField(canvasRef, rippleShape, pointerSpaceRef);
 
   return (
     <>
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0 opacity-[0.55] [mask-image:radial-gradient(circle_at_center,black,transparent_82%)]"
+        className={classNames(
+          "pointer-events-none absolute inset-0 z-0 opacity-[0.55] [mask-image:radial-gradient(circle_at_center,black,transparent_82%)]",
+          hidden && "invisible",
+        )}
         style={{
           backgroundImage:
             "linear-gradient(rgba(255,255,255,0.10) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.09) 1px, transparent 1px)",
@@ -33,7 +54,10 @@ export const TileField = ({
       <canvas
         ref={canvasRef}
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-0 h-full w-full [mask-image:radial-gradient(circle_at_center,black,transparent_82%)]"
+        className={classNames(
+          "pointer-events-none absolute inset-0 z-0 h-full w-full [mask-image:radial-gradient(circle_at_center,black,transparent_82%)]",
+          hidden && "invisible",
+        )}
       />
     </>
   );
