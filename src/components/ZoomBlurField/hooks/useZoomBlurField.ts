@@ -23,6 +23,7 @@ export const useZoomBlurField = (
   onActiveChange?: (active: boolean) => void,
   // Kept for a future stacked lens path; unused while both-mode is shelved.
   underlay = false,
+  sourceDirtyRef?: RefObject<boolean>,
 ) => {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -150,8 +151,12 @@ export const useZoomBlurField = (
     const render = () => {
       updateFocus();
       if (source.width > 0 && source.height > 0) {
-        texture.image = source;
-        texture.needsUpdate = true;
+        const dirty = !sourceDirtyRef || sourceDirtyRef.current;
+        if (dirty) {
+          texture.image = source;
+          texture.needsUpdate = true;
+          if (sourceDirtyRef) sourceDirtyRef.current = false;
+        }
       }
       renderer.render({ scene: mesh });
     };
@@ -236,5 +241,13 @@ export const useZoomBlurField = (
       geometry.remove();
       if (texture.texture) gl.deleteTexture(texture.texture);
     };
-  }, [canvasRef, sourceRef, heroRef, focusRef, onActiveChange, underlay]);
+  }, [
+    canvasRef,
+    sourceRef,
+    heroRef,
+    focusRef,
+    onActiveChange,
+    underlay,
+    sourceDirtyRef,
+  ]);
 };

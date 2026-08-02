@@ -10,12 +10,14 @@ import { useZoomBlurField } from "./hooks/useZoomBlurField";
 // aperture around the intro focus. Enable via ?backdrop=zoom (lazy-loaded).
 export const ZoomBlurField = ({
   source,
+  sourceDirtyRef,
   heroRef,
   focusRef,
   onActiveChange,
   underlay = false,
 }: {
   source: RefObject<HTMLCanvasElement | null>;
+  sourceDirtyRef?: RefObject<boolean>;
   heroRef: RefObject<HTMLElement | null>;
   focusRef: RefObject<HTMLElement | null>;
   onActiveChange?: (active: boolean) => void;
@@ -29,6 +31,7 @@ export const ZoomBlurField = ({
   return createPortal(
     <ZoomBlurCanvas
       source={source}
+      sourceDirtyRef={sourceDirtyRef}
       heroRef={heroRef}
       focusRef={focusRef}
       onActiveChange={onActiveChange}
@@ -40,12 +43,14 @@ export const ZoomBlurField = ({
 
 const ZoomBlurCanvas = ({
   source,
+  sourceDirtyRef,
   heroRef,
   focusRef,
   onActiveChange,
   underlay,
 }: {
   source: RefObject<HTMLCanvasElement | null>;
+  sourceDirtyRef?: RefObject<boolean>;
   heroRef: RefObject<HTMLElement | null>;
   focusRef: RefObject<HTMLElement | null>;
   onActiveChange?: (active: boolean) => void;
@@ -78,6 +83,7 @@ const ZoomBlurCanvas = ({
     focusRef,
     handleActiveRef.current,
     underlay,
+    sourceDirtyRef,
   );
 
   return (

@@ -1,8 +1,7 @@
 // Fullscreen shader pair for the focus-ring lens. The fragment shader
-// re-draws the whole hero backdrop (grid bed + tile canvas texture) so the
-// band bulges can bend all of it: WebGL can sample the TileField canvas but
-// not the CSS grid div, so the grid moves in here (TileField's DOM layers are
-// hidden while the lens is active — see HeroBackdropSection).
+// draws the whole hero backdrop (procedural grid + lit cells from a compact
+// cols×rows scoreboard) so the band bulges can bend all of it. TileField's
+// DOM layers are hidden while the lens is active — see HeroBackdropSection.
 //
 // The fragment source is generated from the LENS_ARCS data (GLSL ES 1.00 has
 // no const-array initializers, so the per-band calls are unrolled at build
@@ -36,9 +35,10 @@ const arcCall = (a: LensArc) =>
 export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   precision highp float;
 
-  uniform sampler2D tMap;      // TileField 2D canvas (trails / ripples / sweeps)
+  uniform sampler2D tTileState; // cols×rows lit-cell scoreboard (NEAREST)
+  uniform vec2 uTileStateSize; // scoreboard size in cells
   uniform vec2 uResolution;    // lens canvas size in CSS px (viewport)
-  uniform vec2 uMapSize;       // TileField canvas size in CSS px — grid phase
+  uniform vec2 uMapSize;       // TileField box size in CSS px — grid phase
                                // must use this, not uResolution, or lit tiles
                                // drift when hero box ≠ window
   uniform float uCell;         // grid cell size in CSS px (TileField CELL)
@@ -76,6 +76,9 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   // 1 when stacked over ZoomBlurField: only paint arcs (+ local warp), so the
   // zoom peephole owns the backdrop outside the bands.
   uniform float uOverlay;
+  // Fringe composite style (LENS_BLEND_CODE): 0 normal, 1 soft, 2 add, 3 screen.
+  // Drives alpha falloff; GL blend func is set to match in useLensField.
+  uniform float uBlend;
 
   varying vec2 vUv;
 
@@ -132,9 +135,9 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   // The static grid bed, replacing TileField's CSS-gradient div: 1px lines on
   // the same 72px cells, alphas matched to the original (0.10 horizontal /
   // 0.09 vertical lines under the div's 0.55 layer opacity).
-  // Drawn in the SOURCE bitmap's CSS pixel space so cell edges share phase
-  // with fillRect tiles on tMap (UV 0..1 = that bitmap, even if the lens
-  // viewport is a slightly different size).
+  // Drawn in the source box's CSS pixel space so cell edges share phase with
+  // the lit-cell scoreboard (even if the lens viewport is a slightly
+  // different size).
   vec3 grid(vec2 uv) {
     vec2 px = vec2(uv.x, 1.0 - uv.y) * uMapSize;
     vec2 g = mod(px, uCell);
@@ -142,11 +145,34 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
     return vec3(a);
   }
 
-  // Full backdrop at a given (possibly warped) UV: grid bed with the lit-tile
-  // canvas composited on top (texture is unpremultiplied, page bg is black).
+  // Lit tiles from the compact scoreboard: one texel per cell (NEAREST).
+  // Alpha is fill*coverage from the JS pack; a 1px rim boosts toward the
+  // old canvas strokeRect so tiles keep a faint outline.
+  vec3 litTiles(vec2 uv) {
+    if (uTileStateSize.x < 1.0 || uTileStateSize.y < 1.0) return vec3(0.0);
+    vec2 px = vec2(uv.x, 1.0 - uv.y) * uMapSize;
+    vec2 cell = floor(px / max(uCell, 1.0));
+    if (cell.x < 0.0 || cell.y < 0.0 ||
+        cell.x >= uTileStateSize.x || cell.y >= uTileStateSize.y) {
+      return vec3(0.0);
+    }
+    // flipY=false: buffer row 0 = top of source = low v after our px flip.
+    vec2 stateUv = (cell + 0.5) / uTileStateSize;
+    vec4 tile = texture2D(tTileState, stateUv);
+    if (tile.a <= 0.001) return vec3(0.0);
+    vec2 local = mod(px, max(uCell, 1.0));
+    float edge = min(
+      min(local.x, local.y),
+      min(uCell - local.x, uCell - local.y)
+    );
+    float stroke = 1.0 - step(1.0, edge);
+    float a = tile.a * mix(1.0, 1.8, stroke);
+    return tile.rgb * a;
+  }
+
+  // Full backdrop at a given (possibly warped) UV: procedural grid + lit cells.
   vec3 scene(vec2 uv) {
-    vec4 tile = texture2D(tMap, uv);
-    return grid(uv) + tile.rgb * tile.a;
+    return grid(uv) + litTiles(uv);
   }
 
   void main() {
@@ -182,19 +208,6 @@ ${arcs.map(arcCall).join("\n")}
     // disp was accumulated in aspect-corrected space; convert back to UV.
     vec2 dispUv = disp / vec2(aspect, 1.0);
 
-    // Sample the warped scene with a slight per-channel spread, so content
-    // under a bulge picks up its own subtle chromatic split.
-    vec3 base  = scene(vUv + dispUv);
-    vec3 outer = scene(vUv + dispUv * (1.0 + uChroma));
-    vec3 inner = scene(vUv + dispUv * (1.0 - uChroma));
-    vec3 col = vec3(outer.r, base.g, inner.b);
-
-    // Radial fade replacing the CSS mask, lifted under the band bulges so
-    // they always have visible content to bend.
-    float cornerDist = 0.5 * length(vec2(aspect, 1.0));
-    float fade = 1.0 - smoothstep(0.4, 0.95, length(q) / cornerDist);
-    fade = max(fade, ridge * 0.9);
-
     // Film grain on the fringe only — centered noise so average brightness
     // holds, and zero fringe means zero grain (no grey lift on the void).
     float fringePeak = max(fringe.r, max(fringe.g, fringe.b));
@@ -211,20 +224,60 @@ ${arcs.map(arcCall).join("\n")}
     // dim the band bodies — that double-darkening is what made them look
     // washed out after the transparent pass landed.
     //
-    // Solo: full faded scene + fringe (lens replaces TileField).
-    // Overlay: fringe glow only — any scene/ridge bed under the soft edge
-    // composites as a black outline over the zoom underlay.
-    float bed = fade * (1.0 - step(0.5, uOverlay));
-    vec3 lit = col * bed + fringe * uTintStrength;
+    // Solo: full faded scene + fringe (lens owns the bed).
+    // Overlay: fringe glow only — skip scene sampling (another pass owns the bed).
+    vec3 lit;
+    float bedFade = 0.0;
+    if (uOverlay > 0.5) {
+      lit = fringe * uTintStrength;
+    } else {
+      // Sample the warped scene with a slight per-channel spread, so content
+      // under a bulge picks up its own subtle chromatic split.
+      vec3 base  = scene(vUv + dispUv);
+      vec3 outer = scene(vUv + dispUv * (1.0 + uChroma));
+      vec3 inner = scene(vUv + dispUv * (1.0 - uChroma));
+      vec3 col = vec3(outer.r, base.g, inner.b);
+
+      // Radial fade replacing the CSS mask, lifted under the band bulges so
+      // they always have visible content to bend.
+      float cornerDist = 0.5 * length(vec2(aspect, 1.0));
+      bedFade = 1.0 - smoothstep(0.4, 0.95, length(q) / cornerDist);
+      bedFade = max(bedFade, ridge * 0.9);
+      lit = col * bedFade + fringe * uTintStrength;
+    }
     // Slightly wider than the old 0.58→0.92 band so the dissolve eases
     // out instead of dropping once the hero starts leaving.
     float exitFade = 1.0 - smoothstep(0.48, 0.98, uScroll);
     float peak = max(lit.r, max(lit.g, lit.b));
     float overlayPeak = fringePeak * uTintStrength;
-    float presence =
-      smoothstep(0.0, 0.004, mix(peak, overlayPeak, step(0.5, uOverlay))) *
-      exitFade;
+    float signal = mix(peak, overlayPeak, step(0.5, uOverlay));
+    // Light coverage — follows intensity so fringe skirts don't occlude.
+    float lightCover = clamp(signal, 0.0, 1.0) * exitFade;
 
-    gl_FragColor = vec4(lit, presence);
+    vec3 outRgb = lit;
+    float presence;
+    if (uBlend < 0.5) {
+      // Normal SRC_ALPHA: hard snap when the scene bed lives in-shader
+      // (desktop solo). Arcs-only has no bed in lit, so use light-weighted
+      // alpha or the skirt punches a black rim through the DOM tiles.
+      if (uOverlay > 0.5) {
+        presence = lightCover;
+      } else {
+        presence = smoothstep(0.0, 0.004, signal) * exitFade;
+      }
+    } else if (uBlend < 1.5) {
+      // Soft SRC_ALPHA: solid bed where the scene lives, light-weighted
+      // alpha on fringe-only skirts so tiles show through.
+      presence = max(bedFade * exitFade, lightCover);
+    } else if (uBlend < 2.5) {
+      // Additive (SRC_ALPHA, ONE): light piles on; alpha = coverage.
+      presence = lightCover;
+    } else {
+      // Screen-ish (ONE, ONE_MINUS_SRC_COLOR): premultiply by coverage.
+      outRgb = lit * lightCover;
+      presence = exitFade;
+    }
+
+    gl_FragColor = vec4(outRgb, presence);
   }
 `;

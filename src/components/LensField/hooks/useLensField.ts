@@ -3,24 +3,30 @@ import { Mesh, Program, Renderer, Texture, Triangle } from "ogl";
 import { buildLensFragment, LENS_VERTEX } from "../lensField.shaders";
 import {
   LENS_ARCS,
+  LENS_BLEND_CODE,
   LENS_DRIFT,
   LENS_FOCUS,
   LENS_GRAIN,
   LENS_POINTER,
   LENS_SCROLL,
+  resolveLensBlend,
   resolveLensPreset,
 } from "../lensField.presets";
-import { CELL } from "@/components/TileField/hooks/useTileField";
+import {
+  CELL,
+  type TileStateMap,
+} from "@/components/TileField/hooks/useTileField";
 import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 // Drives the lens canvas: a viewport-fixed OGL pass (portaled to body) that
-// re-uploads the TileField canvas as a texture each frame. Sized from the
-// window; scroll progress from the hero section so the ring can spin/expand
-// until that section leaves the viewport. Arc radii track an oval fitted to
-// focusRef (intro copy + CTAs) so the ring surrounds the text on any viewport.
+// samples TileField's compact cell-state scoreboard. Sized from the window;
+// scroll progress from the hero section so the ring can spin/expand until that
+// section leaves the viewport. Arc radii track an oval fitted to focusRef
+// (intro copy + CTAs) so the ring surrounds the text on any viewport.
 //
-// Budgets (DPR, FPS, drift, cheap shaders) come from resolveDeviceProfile —
-// real touch devices and ?device=touch / FORCE_DEVICE share the same path.
+// Cell-map uploads are versioned — the GPU keeps the last scoreboard while
+// TileField is static; only sim changes trigger a re-upload. Budgets (DPR,
+// FPS, drift) come from resolveDeviceProfile.
 //
 // onActiveChange(true) fires only once WebGL is actually up, so the caller can
 // keep TileField's DOM layers visible as the no-WebGL fallback until then.
@@ -32,6 +38,7 @@ export const useLensField = (
   onActiveChange?: (active: boolean) => void,
   // Kept for a future stacked zoom path; unused while both-mode is shelved.
   overlay = false,
+  tileStateRef?: RefObject<TileStateMap | null>,
 ) => {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,24 +75,41 @@ export const useLensField = (
     gl.clearColor(0, 0, 0, 0);
 
     const preset = resolveLensPreset();
+    // Same full lens pass on mobile and desktop. Touch still gets cheaper
+    // budgets via profile (DPR/FPS, grain off, no pointer/drift). Chroma stays
+    // on — the tiny cell-state upload makes the extra samples affordable.
+    const arcsOnly = overlay;
+    const blend = resolveLensBlend(arcsOnly);
     // Stacked with zoom: no extra warp halo (bulge 1 = same width as fringe).
-    const bulge = overlay ? 1 : preset.bulge;
-    const texture = new Texture(gl, {
+    const bulge = arcsOnly ? 1 : preset.bulge;
+    const tileTexture = new Texture(gl, {
       generateMipmaps: false,
       premultiplyAlpha: false,
+      flipY: false,
+      minFilter: gl.NEAREST,
+      magFilter: gl.NEAREST,
+      width: 1,
+      height: 1,
+      image: new Uint8Array([0, 0, 0, 0]),
     });
+    let uploadedVersion = -1;
+    let uploadedCols = 1;
+    let uploadedRows = 1;
     const geometry = new Triangle(gl);
     const program = new Program(gl, {
       vertex: LENS_VERTEX,
       fragment: buildLensFragment(LENS_ARCS),
       uniforms: {
-        tMap: { value: texture },
+        tTileState: { value: tileTexture },
+        uTileStateSize: { value: [1, 1] },
         uResolution: { value: [1, 1] },
         uMapSize: { value: [1, 1] },
         uCell: { value: CELL },
-        uWarp: { value: preset.warp },
+        uWarp: { value: arcsOnly ? 0 : preset.warp },
         uBulge: { value: bulge },
-        uChroma: { value: profile.cheapShaders ? 0 : preset.chroma },
+        uChroma: {
+          value: arcsOnly ? 0 : preset.chroma,
+        },
         uTintOuter: { value: preset.tintOuter },
         uTintInner: { value: preset.tintInner },
         uTintStrength: { value: preset.tintStrength },
@@ -99,7 +123,7 @@ export const useLensField = (
         uPointerTilt: { value: finePointer ? LENS_POINTER.tilt : 0 },
         uPointerRotate: { value: finePointer ? LENS_POINTER.rotate : 0 },
         uGrainAmount: {
-          value: profile.cheapShaders ? 0 : LENS_GRAIN.amount,
+          value: arcsOnly || profile.cheapShaders ? 0 : LENS_GRAIN.amount,
         },
         uGrainScale: { value: LENS_GRAIN.scale },
         uTime: { value: 0 },
@@ -107,7 +131,8 @@ export const useLensField = (
         uFocusRadius: { value: LENS_FOCUS.minRadius },
         uFocusStretch: { value: LENS_FOCUS.stretch },
         uArcScale: { value: 1 },
-        uOverlay: { value: overlay ? 1 : 0 },
+        uOverlay: { value: arcsOnly ? 1 : 0 },
+        uBlend: { value: LENS_BLEND_CODE[blend] },
       },
       transparent: true,
     });
@@ -119,6 +144,19 @@ export const useLensField = (
       geometry.remove();
       return;
     }
+
+    // Fringe as light over a surface — see ?blend= and resolveLensBlend.
+    // normal/soft: standard alpha over. add: light pile-up. screen: ONE /
+    // ONE_MINUS_SRC_COLOR approximation of CSS screen.
+    if (blend === "add") {
+      program.setBlendFunc(gl.SRC_ALPHA, gl.ONE);
+    } else if (blend === "screen") {
+      program.setBlendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR);
+    } else {
+      program.setBlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    }
+    program.depthTest = false;
+
     const mesh = new Mesh(gl, { geometry, program });
 
     let raf = 0;
@@ -130,12 +168,29 @@ export const useLensField = (
     let driftMix = 0;
     const grainStarted = performance.now();
 
-    // CSS px of the TileField canvas — must match the space fillRect uses,
-    // not the bitmap's device-pixel width/height.
+    // CSS px of the TileField box — must match the sim's cell phase, not any
+    // device-pixel bitmap size (state-only mode uses a 1×1 canvas).
     const syncMapSize = () => {
       const w = source.clientWidth || source.getBoundingClientRect().width;
       const h = source.clientHeight || source.getBoundingClientRect().height;
       if (w > 0 && h > 0) program.uniforms.uMapSize.value = [w, h];
+    };
+
+    const syncTileState = () => {
+      const map = tileStateRef?.current;
+      if (!map || map.cols <= 0 || map.rows <= 0) return;
+      program.uniforms.uTileStateSize.value = [map.cols, map.rows];
+      if (map.version === uploadedVersion) return;
+      // Reallocate GPU storage when the grid dimensions change.
+      if (map.cols !== uploadedCols || map.rows !== uploadedRows) {
+        tileTexture.width = map.cols;
+        tileTexture.height = map.rows;
+        uploadedCols = map.cols;
+        uploadedRows = map.rows;
+      }
+      tileTexture.image = map.data;
+      tileTexture.needsUpdate = true;
+      uploadedVersion = map.version;
     };
 
     // Fit the content oval to the intro focus box in the same q-space the
@@ -236,10 +291,8 @@ export const useLensField = (
         program.uniforms.uTime.value =
           ((now - grainStarted) / 1000) * LENS_GRAIN.fps;
       }
-      if (source.width > 0 && source.height > 0) {
-        texture.image = source;
-        texture.needsUpdate = true;
-      }
+      // Arcs-only never samples the bed — skip scoreboard uploads there.
+      if (!arcsOnly) syncTileState();
       renderer.render({ scene: mesh });
     };
 
@@ -355,7 +408,15 @@ export const useLensField = (
       // with it when collected.
       program.remove();
       geometry.remove();
-      if (texture.texture) gl.deleteTexture(texture.texture);
+      if (tileTexture.texture) gl.deleteTexture(tileTexture.texture);
     };
-  }, [canvasRef, sourceRef, heroRef, focusRef, onActiveChange, overlay]);
+  }, [
+    canvasRef,
+    sourceRef,
+    heroRef,
+    focusRef,
+    onActiveChange,
+    overlay,
+    tileStateRef,
+  ]);
 };

@@ -4,11 +4,12 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { classNames } from "@/utils/classNames";
 import { useLensField } from "./hooks/useLensField";
+import type { TileStateMap } from "@/components/TileField/hooks/useTileField";
 
 // Elva-style corner lens over the hero backdrop: a WebGL pass that samples the
-// TileField canvas, re-draws the grid bed, and bends both through subtle lens
-// warps with a chromatic fringe (preset-tinted — see lensField.presets.ts, or
-// ?lens=neutral|brand|mono|rgb).
+// TileField cell-state scoreboard, draws the grid bed in-shader, and bends
+// both through subtle lens warps with a chromatic fringe (preset-tinted —
+// see lensField.presets.ts, or ?lens=neutral|brand|mono|rgb).
 //
 // Portaled to document.body and fixed to the viewport so the expanding ring
 // can composite over later sections without being clipped by the hero's box.
@@ -23,13 +24,16 @@ import { useLensField } from "./hooks/useLensField";
 // fires, so the underlying TileField DOM layers remain the visible fallback.
 export const LensField = ({
   source,
+  tileStateRef,
   heroRef,
   focusRef,
   onActiveChange,
   overlay = false,
 }: {
-  // The TileField canvas this lens samples as its texture.
+  // TileField canvas element — used for CSS-box sizing (uMapSize), not pixels.
   source: RefObject<HTMLCanvasElement | null>;
+  // Packed lit-cell scoreboard from TileField (cols×rows RGBA8).
+  tileStateRef?: RefObject<TileStateMap | null>;
   // Hero <section> used for scroll-exit progress (rotate / expand / dissolve).
   heroRef: RefObject<HTMLElement | null>;
   // Intro block (wordmark + headline + CTAs) the content oval is fitted to.
@@ -48,6 +52,7 @@ export const LensField = ({
   return createPortal(
     <LensCanvas
       source={source}
+      tileStateRef={tileStateRef}
       heroRef={heroRef}
       focusRef={focusRef}
       onActiveChange={onActiveChange}
@@ -59,12 +64,14 @@ export const LensField = ({
 
 const LensCanvas = ({
   source,
+  tileStateRef,
   heroRef,
   focusRef,
   onActiveChange,
   overlay,
 }: {
   source: RefObject<HTMLCanvasElement | null>;
+  tileStateRef?: RefObject<TileStateMap | null>;
   heroRef: RefObject<HTMLElement | null>;
   focusRef: RefObject<HTMLElement | null>;
   onActiveChange?: (active: boolean) => void;
@@ -101,6 +108,7 @@ const LensCanvas = ({
     focusRef,
     handleActiveRef.current,
     overlay,
+    tileStateRef,
   );
 
   return (

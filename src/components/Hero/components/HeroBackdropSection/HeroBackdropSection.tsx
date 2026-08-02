@@ -7,7 +7,10 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import dynamic from "next/dynamic";
 import { classNames } from "@/utils/classNames";
 import { TileField } from "@/components/TileField/TileField";
-import type { TilePointerSpace } from "@/components/TileField/hooks/useTileField";
+import type {
+  TilePointerSpace,
+  TileStateMap,
+} from "@/components/TileField/hooks/useTileField";
 import { LensField } from "@/components/LensField/LensField";
 
 // Zoom stays out of the default lens chunk — only fetched for ?backdrop=zoom.
@@ -49,6 +52,10 @@ export const HeroBackdropSection = ({
 }) => {
   const tileCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pointerSpaceRef = useRef<TilePointerSpace>("element");
+  // Zoom still samples the canvas bitmap; dirty-flagged uploads.
+  const sourceDirtyRef = useRef(true);
+  // Lens samples this packed cell map instead of the full canvas.
+  const tileStateRef = useRef<TileStateMap | null>(null);
   const [lensActive, setLensActive] = useState(false);
   const [zoomActive, setZoomActive] = useState(false);
   const [backdrop, setBackdrop] = useState<BackdropMode>(DEFAULT_BACKDROP);
@@ -77,12 +84,16 @@ export const HeroBackdropSection = ({
           rippleShape="round"
           canvasRef={tileCanvasRef}
           pointerSpaceRef={pointerSpaceRef}
+          sourceDirtyRef={showZoom ? sourceDirtyRef : undefined}
+          // Lens path: pack cells, skip canvas paint. Zoom keeps the bitmap.
+          tileStateRef={showLens ? tileStateRef : undefined}
         />
         {/* <GrainOverlay /> — disabled for now (crisper without grain) */}
       </div>
       {showZoom && (
         <ZoomBlurField
           source={tileCanvasRef}
+          sourceDirtyRef={sourceDirtyRef}
           heroRef={heroRef}
           focusRef={focusRef}
           onActiveChange={setZoomActive}
@@ -91,6 +102,7 @@ export const HeroBackdropSection = ({
       {showLens && (
         <LensField
           source={tileCanvasRef}
+          tileStateRef={tileStateRef}
           heroRef={heroRef}
           focusRef={focusRef}
           onActiveChange={setLensActive}

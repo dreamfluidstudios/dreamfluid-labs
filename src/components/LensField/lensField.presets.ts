@@ -1,6 +1,6 @@
 // Every taste knob for the lens lives here — tune this file, not the shader.
 // Same named set as the CRT footer: flip DEFAULT_LENS_PRESET, or A/B with
-// ?lens=neutral|brand|mono|rgb (see resolveLensPreset).
+// ?lens=neutral|brand|mono|rgb and ?blend=normal|soft|add|screen.
 
 export type LensPresetName = "neutral" | "brand" | "mono" | "rgb";
 
@@ -170,4 +170,38 @@ export const resolveLensPreset = (): LensPreset => {
   return q && q in LENS_PRESETS
     ? LENS_PRESETS[q as LensPresetName]
     : LENS_PRESETS[DEFAULT_LENS_PRESET];
+};
+
+// How the fringe composites over what's underneath. A/B with
+// ?blend=normal|soft|add|screen. "auto" → normal (arcs-only still uses
+// soft presence in-shader so mobile doesn't black-rim the tiles).
+export type LensBlendName = "normal" | "soft" | "add" | "screen";
+export type LensBlendOption = LensBlendName | "auto";
+
+export const DEFAULT_LENS_BLEND: LensBlendOption = "auto";
+
+// Shader uBlend codes — keep in sync with lensField.shaders.ts.
+export const LENS_BLEND_CODE: Record<LensBlendName, number> = {
+  normal: 0,
+  soft: 1,
+  add: 2,
+  screen: 3,
+};
+
+export const resolveLensBlend = (_arcsOnly: boolean): LensBlendName => {
+  let choice: LensBlendOption = DEFAULT_LENS_BLEND;
+  if (typeof window !== "undefined") {
+    const q = new URLSearchParams(window.location.search).get("blend");
+    if (
+      q === "normal" ||
+      q === "soft" ||
+      q === "add" ||
+      q === "screen" ||
+      q === "auto"
+    ) {
+      choice = q;
+    }
+  }
+  if (choice === "auto") return "normal";
+  return choice;
 };

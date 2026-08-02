@@ -72,25 +72,49 @@ type Ripple = { start: number; idx: number; tiles: RippleTile[] };
 //    scrolled away while the visible grid has not
 export type TilePointerSpace = "element" | "viewport";
 
-// Drives the tile-field canvas: hover lights the tile under the cursor and
+// Compact lit-cell scoreboard for the lens (cols×rows RGBA8). When this ref
+// is provided, the sim packs here and skips full-canvas fillRect — Lens draws
+// the bed in GL. Standalone use (no ref) keeps the 2D canvas path.
+export type TileStateMap = {
+  cols: number;
+  rows: number;
+  // rgb = shade, a = fill * smoothstep(heat) * peak (matches canvas fillRect)
+  data: Uint8Array;
+  version: number;
+};
+
+// Drives the tile-field sim: hover lights the tile under the cursor and
 // leaves a fading trail; a click spawns a ripple in the given shape.
+// With tileStateRef, this is brain-only for the hero lens; without it, the
+// canvas is the visible surface (e.g. /comingsoon).
 export const useTileField = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   rippleShape: RippleShape,
   // Ref so the hero can flip to "viewport" when the lens comes up without
   // tearing down the whole animation loop.
   pointerSpaceRef?: RefObject<TilePointerSpace>,
+  // When a WebGL pass samples this canvas, flip true after any bitmap change
+  // so the sampler can skip redundant GPU uploads while the field is static.
+  sourceDirtyRef?: RefObject<boolean>,
+  tileStateRef?: RefObject<TileStateMap | null>,
 ) => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const profile = resolveDeviceProfile();
     if (profile.reducedMotion) return;
+    // State-only mode still needs a 2d context for measure/resize bookkeeping
+    // when we paint; when packing for the lens we skip drawing but keep ctx
+    // for the standalone path if the consumer is removed mid-lifetime.
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     // Hover trails / click ripples are desktop-only. Real touch and
     // ?device=touch / FORCE_DEVICE share this gate so emulation matches phones.
     const pointerInteractive = profile.finePointer;
+    const stateOnly = !!tileStateRef;
+    const markDirty = () => {
+      if (sourceDirtyRef) sourceDirtyRef.current = true;
+    };
 
     const tiles = new Map<number, Tile>();
     const ripples: Ripple[] = [];
@@ -139,6 +163,54 @@ export const useTileField = (
       return { x: clientX - originX, y: clientY - originY };
     };
 
+    const ensureStateBuffer = (nextCols: number, nextRows: number) => {
+      if (!tileStateRef) return;
+      const prev = tileStateRef.current;
+      const bytes = nextCols * nextRows * 4;
+      if (
+        prev &&
+        prev.cols === nextCols &&
+        prev.rows === nextRows &&
+        prev.data.length === bytes
+      ) {
+        prev.data.fill(0);
+        return;
+      }
+      tileStateRef.current = {
+        cols: nextCols,
+        rows: nextRows,
+        data: new Uint8Array(bytes),
+        version: prev?.version ?? 0,
+      };
+    };
+
+    const packState = () => {
+      if (!tileStateRef) return;
+      let map = tileStateRef.current;
+      if (!map || map.cols !== cols || map.rows !== rows) {
+        ensureStateBuffer(cols, rows);
+        map = tileStateRef.current;
+      }
+      if (!map || cols <= 0 || rows <= 0) return;
+      const { data } = map;
+      data.fill(0);
+      for (const [key, tile] of tiles) {
+        const c = key % cols;
+        const r = Math.floor(key / cols);
+        if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
+        const coverage =
+          tile.heat * tile.heat * (3 - 2 * tile.heat) * tile.peak;
+        const a = Math.min(1, Math.max(0, coverage * tile.shade.fill));
+        const i = (r * cols + c) * 4;
+        data[i] = tile.shade.r;
+        data[i + 1] = tile.shade.g;
+        data[i + 2] = tile.shade.b;
+        data[i + 3] = Math.round(a * 255);
+      }
+      map.version += 1;
+      markDirty();
+    };
+
     const resize = () => {
       const prevW = width;
       const prevH = height;
@@ -152,15 +224,24 @@ export const useTileField = (
       ) {
         return;
       }
-      const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       cols = Math.ceil(width / CELL) + 1;
       rows = Math.ceil(height / CELL) + 1;
       tiles.clear();
       ripples.length = 0;
-      ctx.clearRect(0, 0, width, height);
+      if (stateOnly) {
+        // Hero lens path: DOM box still sizes the grid; bitmap stays tiny.
+        canvas.width = 1;
+        canvas.height = 1;
+        ensureStateBuffer(cols, rows);
+        packState();
+      } else {
+        const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, width, height);
+        markDirty();
+      }
       // Resume an in-flight idle sweep so the source isn't stuck empty.
       if (sweeping && !sweep) scheduleSweep();
       wake();
@@ -209,7 +290,6 @@ export const useTileField = (
         }
         if (rp.idx >= rp.tiles.length) ripples.splice(i, 1);
       }
-      ctx.clearRect(0, 0, width, height);
       let fading = false;
       for (const [key, tile] of tiles) {
         if (key !== current) {
@@ -220,15 +300,25 @@ export const useTileField = (
           }
           fading = true;
         }
-        const a = tile.heat * tile.heat * (3 - 2 * tile.heat) * tile.peak;
-        const x = (key % cols) * CELL;
-        const y = Math.floor(key / cols) * CELL;
-        const { r, g, b, fill, line } = tile.shade;
-        ctx.fillStyle = `rgba(${r},${g},${b},${fill * a})`;
-        ctx.fillRect(x, y, CELL, CELL);
-        ctx.strokeStyle = `rgba(${r},${g},${b},${line * a})`;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+      }
+
+      if (stateOnly) {
+        // Lens owns pixels — only refresh the cell scoreboard.
+        packState();
+      } else {
+        ctx.clearRect(0, 0, width, height);
+        for (const [key, tile] of tiles) {
+          const a = tile.heat * tile.heat * (3 - 2 * tile.heat) * tile.peak;
+          const x = (key % cols) * CELL;
+          const y = Math.floor(key / cols) * CELL;
+          const { r, g, b, fill, line } = tile.shade;
+          ctx.fillStyle = `rgba(${r},${g},${b},${fill * a})`;
+          ctx.fillRect(x, y, CELL, CELL);
+          ctx.strokeStyle = `rgba(${r},${g},${b},${line * a})`;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, CELL - 1, CELL - 1);
+        }
+        markDirty();
       }
       // A held tile repaints identically, so the loop only needs to run while
       // something is fading, a ripple is still expanding, or a trail is sweeping.
@@ -348,5 +438,5 @@ export const useTileField = (
       window.removeEventListener(TILE_SWEEP_EVENT, onSweepStart);
       document.documentElement.removeEventListener("pointerleave", leave);
     };
-  }, [canvasRef, rippleShape, pointerSpaceRef]);
+  }, [canvasRef, rippleShape, pointerSpaceRef, sourceDirtyRef, tileStateRef]);
 };
