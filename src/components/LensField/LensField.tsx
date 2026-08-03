@@ -6,10 +6,10 @@ import { classNames } from "@/utils/classNames";
 import { useLensField } from "./hooks/useLensField";
 import type { TileStateMap } from "@/components/TileField/hooks/useTileField";
 
-// Elva-style corner lens over the hero backdrop: a WebGL pass that samples the
-// TileField cell-state scoreboard, draws the grid bed in-shader, and bends
-// both through subtle lens warps with a chromatic fringe (preset-tinted —
-// see lensField.presets.ts, or ?lens=neutral|brand|mono|rgb).
+// Elva-style corner lens over the hero backdrop. Desktop: samples the
+// TileField cell-state scoreboard, draws the grid bed in-shader, warps both
+// with a chromatic fringe. Touch: arcs-only overlay — DOM TileField keeps the
+// bed; this pass paints the fringe only (preset via ?lens=… / ?blend=…).
 //
 // Portaled to document.body and fixed to the viewport so the expanding ring
 // can composite over later sections without being clipped by the hero's box.

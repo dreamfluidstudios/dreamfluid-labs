@@ -18,18 +18,17 @@ import {
 } from "@/components/TileField/hooks/useTileField";
 import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
-// Drives the lens canvas: a viewport-fixed OGL pass (portaled to body) that
-// samples TileField's compact cell-state scoreboard. Sized from the window;
-// scroll progress from the hero section so the ring can spin/expand until that
-// section leaves the viewport. Arc radii track an oval fitted to focusRef
-// (intro copy + CTAs) so the ring surrounds the text on any viewport.
+// Drives the lens canvas: a viewport-fixed OGL pass (portaled to body).
+// Desktop samples TileField's cell-state scoreboard and draws the full bed.
+// Touch is arcs-only (uOverlay) — DOM TileField keeps the grid/tiles, GL only
+// paints the fringe so we skip per-pixel scene() on phones.
 //
-// Cell-map uploads are versioned — the GPU keeps the last scoreboard while
-// TileField is static; only sim changes trigger a re-upload. Budgets (DPR,
-// FPS, drift) come from resolveDeviceProfile.
+// Scroll progress from the hero spins/expands the ring; arc radii track an
+// oval fitted to focusRef. Budgets (DPR, drift, cheap shaders) come from
+// resolveDeviceProfile.
 //
 // onActiveChange(true) fires only once WebGL is actually up, so the caller can
-// keep TileField's DOM layers visible as the no-WebGL fallback until then.
+// keep TileField's DOM layers visible as the no-WebGL / arcs-only bed.
 export const useLensField = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   sourceRef: RefObject<HTMLCanvasElement | null>,
@@ -77,11 +76,11 @@ export const useLensField = (
     gl.clearColor(0, 0, 0, 0);
 
     const preset = resolveLensPreset();
-    // Same full lens pass on mobile and desktop. Touch budgets: DPR 1, grain
-    // off, chroma off (single scene sample — see shader), no pointer/drift.
+    // overlay=true: arcs-only (touch hero bed, or stacked zoom). Caller owns
+    // the flag so DOM visibility and the shader path can't disagree.
     const arcsOnly = overlay;
     const blend = resolveLensBlend(arcsOnly);
-    // Stacked with zoom: no extra warp halo (bulge 1 = same width as fringe).
+    // Arcs-only: no extra warp halo (bulge 1 = same width as fringe).
     const bulge = arcsOnly ? 1 : preset.bulge;
     const chroma = arcsOnly || profile.cheapShaders ? 0 : preset.chroma;
     const tileTexture = new Texture(gl, {
@@ -112,7 +111,11 @@ export const useLensField = (
         uChroma: { value: chroma },
         uTintOuter: { value: preset.tintOuter },
         uTintInner: { value: preset.tintInner },
-        uTintStrength: { value: preset.tintStrength },
+        // Arcs-only has no in-shader bed under the ridge — lift the fringe
+        // a touch so it matches the desktop solo read.
+        uTintStrength: {
+          value: arcsOnly ? preset.tintStrength * 1.25 : preset.tintStrength,
+        },
         uScroll: { value: 0 },
         // Touch: gentler exit so compositor/JS desync is less obvious.
         uScrollRotate: {
@@ -151,9 +154,12 @@ export const useLensField = (
     }
 
     // Fringe as light over a surface — see ?blend= and resolveLensBlend.
-    // normal/soft: standard alpha over. add: light pile-up. screen: ONE /
-    // ONE_MINUS_SRC_COLOR approximation of CSS screen.
-    if (blend === "add") {
+    // Arcs-only + add: write unpremultiplied fringe with ONE,ZERO so the
+    // browser's source-over soft-composites over the DOM bed (SRC_ALPHA,ONE
+    // into the FB stored dark×high-alpha skirts → black rims on the page).
+    if (blend === "add" && arcsOnly) {
+      program.setBlendFunc(gl.ONE, gl.ZERO);
+    } else if (blend === "add") {
       program.setBlendFunc(gl.SRC_ALPHA, gl.ONE);
     } else if (blend === "screen") {
       program.setBlendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR);

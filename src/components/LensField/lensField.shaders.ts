@@ -275,8 +275,17 @@ ${arcs.map(arcCall).join("\n")}
       // alpha on fringe-only skirts so tiles show through.
       presence = max(bedFade * exitFade, lightCover);
     } else if (uBlend < 2.5) {
-      // Additive (SRC_ALPHA, ONE): light piles on; alpha = coverage.
-      presence = lightCover;
+      if (uOverlay > 0.5) {
+        // Arcs-only over DOM: store unpremultiplied color + soft alpha.
+        // Browser source-over then does rgb*a + dst*(1-a). Dark rgb with a
+        // hard/high alpha was the black outline around the fringe.
+        float glow = max(overlayPeak, 1e-4);
+        outRgb = lit / glow;
+        presence = clamp(glow, 0.0, 1.0) * exitFade;
+      } else {
+        // Solo FB additive path — falloff lives in rgb; alpha is exit only.
+        presence = exitFade;
+      }
     } else {
       // Screen-ish (ONE, ONE_MINUS_SRC_COLOR): premultiply by coverage.
       outRgb = lit * lightCover;
