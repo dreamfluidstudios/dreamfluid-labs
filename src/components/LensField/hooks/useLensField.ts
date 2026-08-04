@@ -18,17 +18,16 @@ import {
 } from "@/components/TileField/hooks/useTileField";
 import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
-// Drives the lens canvas: a viewport-fixed OGL pass (portaled to body).
-// Desktop samples TileField's cell-state scoreboard and draws the full bed.
-// Touch is arcs-only (uOverlay) — DOM TileField keeps the grid/tiles, GL only
-// paints the fringe so we skip per-pixel scene() on phones.
+// Drives the lens canvas: a viewport-fixed OGL pass (portaled to body) that
+// samples TileField's compact cell-state scoreboard and draws the full bed.
+// Touch matches desktop arcs, but skips bed warp + chroma (cheapShaders).
 //
 // Scroll progress from the hero spins/expands the ring; arc radii track an
 // oval fitted to focusRef. Budgets (DPR, drift, cheap shaders) come from
 // resolveDeviceProfile.
 //
 // onActiveChange(true) fires only once WebGL is actually up, so the caller can
-// keep TileField's DOM layers visible as the no-WebGL / arcs-only bed.
+// keep TileField's DOM layers visible as the no-WebGL fallback until then.
 export const useLensField = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   sourceRef: RefObject<HTMLCanvasElement | null>,
@@ -76,13 +75,14 @@ export const useLensField = (
     gl.clearColor(0, 0, 0, 0);
 
     const preset = resolveLensPreset();
-    // overlay=true: arcs-only (touch hero bed, or stacked zoom). Caller owns
-    // the flag so DOM visibility and the shader path can't disagree.
+    // overlay=true: stacked zoom path (arcs only). Solo lens always draws the
+    // full bed — touch included — so arcs match desktop. Touch only drops
+    // bed warp + chroma via cheapShaders.
     const arcsOnly = overlay;
     const blend = resolveLensBlend(arcsOnly);
-    // Arcs-only: no extra warp halo (bulge 1 = same width as fringe).
     const bulge = arcsOnly ? 1 : preset.bulge;
     const chroma = arcsOnly || profile.cheapShaders ? 0 : preset.chroma;
+    const warp = arcsOnly || profile.cheapShaders ? 0 : preset.warp;
     const tileTexture = new Texture(gl, {
       generateMipmaps: false,
       premultiplyAlpha: false,
@@ -106,24 +106,15 @@ export const useLensField = (
         uResolution: { value: [1, 1] },
         uMapSize: { value: [1, 1] },
         uCell: { value: CELL },
-        uWarp: { value: arcsOnly ? 0 : preset.warp },
+        uWarp: { value: warp },
         uBulge: { value: bulge },
         uChroma: { value: chroma },
         uTintOuter: { value: preset.tintOuter },
         uTintInner: { value: preset.tintInner },
-        // Arcs-only has no in-shader bed under the ridge — lift the fringe
-        // a touch so it matches the desktop solo read.
-        uTintStrength: {
-          value: arcsOnly ? preset.tintStrength * 1.25 : preset.tintStrength,
-        },
+        uTintStrength: { value: preset.tintStrength },
         uScroll: { value: 0 },
-        // Touch: gentler exit so compositor/JS desync is less obvious.
-        uScrollRotate: {
-          value: profile.touch ? LENS_SCROLL.rotate * 0.55 : LENS_SCROLL.rotate,
-        },
-        uScrollExpand: {
-          value: profile.touch ? LENS_SCROLL.expand * 0.65 : LENS_SCROLL.expand,
-        },
+        uScrollRotate: { value: LENS_SCROLL.rotate },
+        uScrollExpand: { value: LENS_SCROLL.expand },
         uPointer: { value: [0, 0] },
         uPointerParallax: {
           value: finePointer ? LENS_POINTER.parallax : 0,
@@ -154,12 +145,9 @@ export const useLensField = (
     }
 
     // Fringe as light over a surface — see ?blend= and resolveLensBlend.
-    // Arcs-only + add: write unpremultiplied fringe with ONE,ZERO so the
-    // browser's source-over soft-composites over the DOM bed (SRC_ALPHA,ONE
-    // into the FB stored dark×high-alpha skirts → black rims on the page).
-    if (blend === "add" && arcsOnly) {
-      program.setBlendFunc(gl.ONE, gl.ZERO);
-    } else if (blend === "add") {
+    // normal/soft: standard alpha over. add: light pile-up. screen: ONE /
+    // ONE_MINUS_SRC_COLOR approximation of CSS screen.
+    if (blend === "add") {
       program.setBlendFunc(gl.SRC_ALPHA, gl.ONE);
     } else if (blend === "screen") {
       program.setBlendFunc(gl.ONE, gl.ONE_MINUS_SRC_COLOR);

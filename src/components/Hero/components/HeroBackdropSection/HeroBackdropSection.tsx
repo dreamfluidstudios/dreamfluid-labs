@@ -12,7 +12,6 @@ import type {
   TileStateMap,
 } from "@/components/TileField/hooks/useTileField";
 import { LensField } from "@/components/LensField/LensField";
-import { useDeviceProfile } from "@/hooks/useDeviceProfile";
 
 // Zoom stays out of the default lens chunk — only fetched for ?backdrop=zoom.
 const ZoomBlurField = dynamic(
@@ -41,11 +40,9 @@ const resolveBackdrop = (): BackdropMode => {
 
 // The hero's backdrop. TileField paints into a shared canvas inside the hero
 // box; WebGL field(s) are portaled + viewport-fixed so they can sit over later
-// sections.
-//
-// Desktop lens: DOM tiles crossfade out; GL owns the bed via tileStateRef.
-// Touch lens: arcs-only — DOM bed stays visible; GL paints fringe only.
-// Pointer space flips to "viewport" when a fixed field is presenting.
+// sections. When WebGL comes up the DOM tiles crossfade out; the lens owns the
+// bed via tileStateRef. Pointer space flips to "viewport" with the field so
+// hover tracks the fixed image.
 export const HeroBackdropSection = ({
   heroRef,
   focusRef,
@@ -54,12 +51,11 @@ export const HeroBackdropSection = ({
   // Intro copy + CTAs — lens oval / zoom focus is fitted to this box.
   focusRef: RefObject<HTMLElement | null>;
 }) => {
-  const profile = useDeviceProfile();
   const tileCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pointerSpaceRef = useRef<TilePointerSpace>("element");
   // Zoom still samples the canvas bitmap; dirty-flagged uploads.
   const sourceDirtyRef = useRef(true);
-  // Desktop lens: packed cell map. Unused on touch (arcs-only / DOM bed).
+  // Lens samples this packed cell map instead of the full canvas.
   const tileStateRef = useRef<TileStateMap | null>(null);
   const [lensActive, setLensActive] = useState(false);
   const [zoomActive, setZoomActive] = useState(false);
@@ -68,11 +64,6 @@ export const HeroBackdropSection = ({
   const showLens = backdrop === "lens";
   const showZoom = backdrop === "zoom";
   const fieldActive = showZoom ? zoomActive : lensActive;
-  // One flag for hero + lens: touch lens is arcs-only over the DOM bed.
-  const arcsOnlyLens = showLens && profile.touch;
-  const hideDomBed = fieldActive && !arcsOnlyLens;
-  // Desktop lens packs cells; arcs-only paints the canvas for the visible bed.
-  const useTileState = showLens && !arcsOnlyLens;
 
   useEffect(() => {
     setBackdrop(resolveBackdrop());
@@ -87,7 +78,7 @@ export const HeroBackdropSection = ({
       <div
         className={classNames(
           "pointer-events-none absolute inset-0 z-0 motion-safe:transition-opacity motion-safe:duration-700 motion-safe:ease-out",
-          hideDomBed ? "opacity-0" : "opacity-100",
+          fieldActive ? "opacity-0" : "opacity-100",
         )}
       >
         <TileField
@@ -95,7 +86,8 @@ export const HeroBackdropSection = ({
           canvasRef={tileCanvasRef}
           pointerSpaceRef={pointerSpaceRef}
           sourceDirtyRef={showZoom ? sourceDirtyRef : undefined}
-          tileStateRef={useTileState ? tileStateRef : undefined}
+          // Lens path: pack cells, skip canvas paint. Zoom keeps the bitmap.
+          tileStateRef={showLens ? tileStateRef : undefined}
         />
         {/* <GrainOverlay /> — disabled for now (crisper without grain) */}
       </div>
@@ -111,12 +103,10 @@ export const HeroBackdropSection = ({
       {showLens && (
         <LensField
           source={tileCanvasRef}
-          tileStateRef={useTileState ? tileStateRef : undefined}
+          tileStateRef={tileStateRef}
           heroRef={heroRef}
           focusRef={focusRef}
           onActiveChange={setLensActive}
-          // Same touch flag as keep-DOM — don't let the lens decide alone.
-          overlay={arcsOnlyLens}
         />
       )}
     </>

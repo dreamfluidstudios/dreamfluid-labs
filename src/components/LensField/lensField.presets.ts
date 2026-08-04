@@ -173,9 +173,7 @@ export const resolveLensPreset = (): LensPreset => {
 };
 
 // How the fringe composites over what's underneath. A/B with
-// ?blend=normal|soft|add|screen.
-// "auto" → add when arcs-only (mobile / overlay: light over DOM bed), else
-// normal (desktop solo bed lives in the same pass).
+// ?blend=normal|soft|add|screen. "auto" → normal (solo bed + arcs in one pass).
 export type LensBlendName = "normal" | "soft" | "add" | "screen";
 export type LensBlendOption = LensBlendName | "auto";
 
@@ -189,7 +187,7 @@ export const LENS_BLEND_CODE: Record<LensBlendName, number> = {
   screen: 3,
 };
 
-export const resolveLensBlend = (arcsOnly: boolean): LensBlendName => {
+export const resolveLensBlend = (_arcsOnly: boolean): LensBlendName => {
   let choice: LensBlendOption = DEFAULT_LENS_BLEND;
   if (typeof window !== "undefined") {
     const q = new URLSearchParams(window.location.search).get("blend");
@@ -203,6 +201,6 @@ export const resolveLensBlend = (arcsOnly: boolean): LensBlendName => {
       choice = q;
     }
   }
-  if (choice === "auto") return arcsOnly ? "add" : "normal";
+  if (choice === "auto") return "normal";
   return choice;
 };
