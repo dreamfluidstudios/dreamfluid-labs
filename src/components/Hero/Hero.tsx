@@ -9,10 +9,17 @@ import { HeroBackdropSection } from "./components/HeroBackdropSection/HeroBackdr
 import { IdleTrailsCue } from "./components/IdleTrailsCue";
 import { heroContent } from "./hero.content";
 
-// The Hero owns its signature backdrop. LensField is viewport-fixed (so the
-// expanding ring can sit over later sections); copy fades out via scroll-fade
-// as the section scrolls away. No overflow clip here — it would trap any
-// non-portaled fixed layers once a transform lands on an ancestor.
+// The Hero owns its signature backdrop. LensField is absolutely positioned
+// against this section and overhangs its bottom edge, so the expanding ring
+// reaches the next section while still scrolling with the copy (that is what
+// keeps the arcs locked to the headline on touch — see LensField.tsx). Copy
+// fades out via scroll-fade as the section scrolls away.
+//
+// Two things here are load-bearing for that and should not change casually:
+// no overflow clip (it would cut off the lens overhang), and no z-index on the
+// section — position: relative with z-index: auto creates no stacking context,
+// so the copy's z-10 and the lens canvas's z-2 are ordered against each other
+// directly, which is what keeps the backdrop behind the copy.
 export const Hero = () => {
   const sectionRef = useRef<HTMLElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);

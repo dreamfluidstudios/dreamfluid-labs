@@ -15,6 +15,10 @@ export type DeviceProfile = {
   enablePointerParallax: boolean;
   enableIdleDrift: boolean;
   enableScrollBlur: boolean;
+  // TileField's idle auto-trails — slow sweeps that read as a cursor being
+  // dragged across the field. Desktop only: with no cursor on screen to
+  // motivate them, they just look like the backdrop moving on its own.
+  enableIdleTrails: boolean;
   cheapShaders: boolean;
   zoomSamples: number;
 };
@@ -32,11 +36,17 @@ const DESKTOP_PROFILE = {
 } as const;
 
 const TOUCH_PROFILE = {
-  // 1× CSS pixels — every 0.25 DPR step is ~56% more fragment work.
-  dprCap: 1,
-  // Same as desktop: vsync via rAF. A 30fps cap made scroll-linked arcs lag.
+  // Same 2× ceiling as desktop, so phones get the same crispness. This is
+  // affordable now that the lens is compositor-locked and skips redundant
+  // draws; useLensField also steps DPR down on its own if frames slip, which
+  // is a better floor than guessing one up front. The old cap of 1 was fixing
+  // the wrong problem — the phone stutter was scroll sync, not fill rate, and
+  // 1× only made the arcs look soft.
+  dprCap: 2,
+  // 0 = every rAF (follow display refresh). Don't undersample scroll-driven GL.
   targetFps: 0,
-  // Turns off chroma (3× scene samples) + grain. Needed to hit vsync on scroll.
+  // Turns off chroma (3× scene samples) + grain — real fill-rate savings that
+  // cost almost nothing visually at arc scale.
   cheapShaders: true,
   zoomSamples: 5,
 } as const;
@@ -60,6 +70,7 @@ export const resolveDeviceProfile = (): DeviceProfile => {
       enablePointerParallax: true,
       enableIdleDrift: true,
       enableScrollBlur: true,
+      enableIdleTrails: true,
       ...DESKTOP_PROFILE,
     };
   }
@@ -96,6 +107,7 @@ export const resolveDeviceProfile = (): DeviceProfile => {
     enablePointerParallax: finePointer && !reducedMotion,
     enableIdleDrift: finePointer && !reducedMotion,
     enableScrollBlur: !touch && !reducedMotion,
+    enableIdleTrails: !touch && !reducedMotion,
     cheapShaders: budget.cheapShaders,
     zoomSamples: budget.zoomSamples,
   };

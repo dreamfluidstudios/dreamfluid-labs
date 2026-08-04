@@ -18,6 +18,10 @@ export type { RippleShape, TileStateMap };
 // grid lives here — not with the ambient gradients — because it is the unlit
 // bed the canvas tiles light up, sharing the exact CELL size.
 //
+// Hover trails, click ripples and idle auto-trails are all desktop-only, so on
+// touch the field is driven purely by programmatic ripples (the hero's slam
+// landing) and is otherwise static.
+//
 // When a WebGL lens presents this field, pass tileStateRef so the sim packs a
 // tiny cell map instead of painting a full bitmap (Lens draws the bed in GL).
 // DOM layers can still fade out; pointerSpace flips to "viewport" so hover

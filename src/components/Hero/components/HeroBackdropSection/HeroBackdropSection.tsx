@@ -39,10 +39,15 @@ const resolveBackdrop = (): BackdropMode => {
 };
 
 // The hero's backdrop. TileField paints into a shared canvas inside the hero
-// box; WebGL field(s) are portaled + viewport-fixed so they can sit over later
-// sections. When WebGL comes up the DOM tiles crossfade out; the lens owns the
-// bed via tileStateRef. Pointer space flips to "viewport" with the field so
-// hover tracks the fixed image.
+// box; when WebGL comes up the DOM tiles crossfade out and the field owns the
+// bed.
+//
+// LensField is a sibling in this same box — absolutely positioned, in the
+// scroll flow — so its bed lands exactly on TileField's grid and its arcs stay
+// compositor-locked to the copy while scrolling (see LensField.tsx). Because it
+// shares the hero's coordinate space, pointer mapping stays in "element" space.
+// ZoomBlurField is the exception: it is still viewport-fixed and samples the
+// bitmap as a fullscreen texture, so it needs "viewport" pointer space.
 export const HeroBackdropSection = ({
   heroRef,
   focusRef,
@@ -70,8 +75,8 @@ export const HeroBackdropSection = ({
   }, []);
 
   useEffect(() => {
-    pointerSpaceRef.current = fieldActive ? "viewport" : "element";
-  }, [fieldActive]);
+    pointerSpaceRef.current = showZoom && zoomActive ? "viewport" : "element";
+  }, [showZoom, zoomActive]);
 
   return (
     <>

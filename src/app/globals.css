@@ -2,7 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+/* Google Fonts are linked from app/layout.tsx, not @import-ed here.
+   An @import inside a stylesheet is only discovered after that stylesheet has
+   downloaded and parsed, so the font request serialises behind the CSS instead
+   of being picked up by the preload scanner — it delays first paint on a phone
+   connection for no reason. See the <link rel="preconnect"> pair in layout.tsx.
+   TODO: next/font/google would self-host these and drop the third-party round
+   trip entirely; it needs the Tailwind fontFamily entries moved onto CSS vars. */
 
 @font-face {
   font-family: "Geist Pixel Square";
@@ -63,10 +69,8 @@ html {
 
 /* Scroll dissolve: useScrollFade writes --scroll-fade (max of enter/exit,
    0 → 1) and toggles data-fading. Blur only while fading — a resting blur(0)
-   would still count as `filter` and flatten stacking against the fixed lens. */
+   would still count as `filter` and flatten stacking against the lens. */
 .scroll-fade {
-  --enter-fade: 0;
-  --exit-fade: 0;
   --scroll-fade: 0;
   /* Full dissolve at 1 — short viewports need the outgoing section gone. */
   opacity: calc(1 - var(--scroll-fade));
@@ -77,16 +81,40 @@ html {
   will-change: opacity, filter;
 }
 
-/* Phone / forced ?device=touch: lighter dissolve — full blur is costly under
-   fixed WebGL layers. data-device lets desktop emulation hit the same path;
+/* Phone / forced ?device=touch: opacity only, no blur at all.
+   `filter: blur()` with a value that changes every scroll frame forces a full
+   re-rasterisation + gaussian pass of the whole section on each frame, on the
+   same GPU that is drawing the lens — one of the most expensive things you can
+   put on an iOS scroll path. Opacity is a pure compositor property and costs
+   nothing. Reducing the radius (the old 6px) didn't help: the per-frame
+   re-raster is the cost, not the radius.
+   data-device lets desktop emulation hit the same path;
    html[data-device="desktop"] keeps the full blur even on coarse hardware. */
 html[data-device="touch"] .scroll-fade[data-fading="true"] {
-  filter: blur(calc(var(--scroll-fade) * 6px));
+  filter: none;
+  will-change: opacity;
 }
 
 @media (hover: none) and (pointer: coarse) {
   html:not([data-device="desktop"]) .scroll-fade[data-fading="true"] {
-    filter: blur(calc(var(--scroll-fade) * 6px));
+    filter: none;
+    will-change: opacity;
+  }
+}
+
+/* Frosted leading edge (ScrollFadeEdge.tsx). Touch drops the backdrop pass:
+   a backdrop-filter band with content scrolling underneath makes the
+   compositor re-snapshot and re-blur that region every frame. The gradient
+   underneath already carries most of the separation. */
+html[data-device="touch"] .scroll-fade-edge {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  html:not([data-device="desktop"]) .scroll-fade-edge {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 

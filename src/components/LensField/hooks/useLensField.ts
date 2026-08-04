@@ -18,16 +18,41 @@ import {
 } from "@/components/TileField/hooks/useTileField";
 import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
-// Drives the lens canvas: a viewport-fixed OGL pass (portaled to body) that
-// samples TileField's compact cell-state scoreboard and draws the full bed.
-// Touch matches desktop arcs, but skips bed warp + chroma (cheapShaders).
+// Drives the lens canvas: an OGL pass that samples TileField's compact
+// cell-state scoreboard and draws the full bed. Touch matches desktop arcs,
+// but skips bed warp + chroma (cheapShaders).
 //
-// Scroll progress from the hero spins/expands the ring; arc radii track an
-// oval fitted to focusRef. Budgets (DPR, drift, cheap shaders) come from
-// resolveDeviceProfile.
+// SCROLL LOCK — the thing this file exists to get right.
+// The canvas is absolutely positioned inside the hero, in the document's
+// scroll flow. It is NOT viewport-fixed. That matters because iOS scrolls the
+// page on the compositor/UI thread at full display rate while JS runs on the
+// main thread: anything that recomputes its on-screen position from
+// window.scrollY every frame trails the DOM by however long the main thread
+// took, and freezes outright whenever the main thread hitches. A fixed canvas
+// drawing arcs around scrolling copy therefore *cannot* stay glued to it —
+// that lag is what read as "delayed and choppy" on the phone.
+//
+// In flow, the compositor translates the canvas together with the copy, so the
+// arcs are pixel-locked to the headline for free, at any main-thread rate.
+// uFocusCenter becomes a layout-time constant (no per-frame scroll read at
+// all). Only the exit spin/expand/dissolve still samples window.scrollY, and
+// that one is lag-tolerant: it is a slow global transform, not a position lock,
+// so a frame or two of latency is invisible.
+//
+// Everything else here follows from that: draws are skipped when no uniform
+// actually changed, the loop is parked by IntersectionObserver when the canvas
+// is off-screen, and DPR steps down on its own if frames start slipping.
 //
 // onActiveChange(true) fires only once WebGL is actually up, so the caller can
 // keep TileField's DOM layers visible as the no-WebGL fallback until then.
+
+// Rolling frame-gap average (ms) above which we drop a DPR step. ~45fps —
+// below either a 60Hz or 120Hz target by enough to be a real problem.
+const DPR_DOWNGRADE_MS = 22;
+const DPR_SAMPLE_FRAMES = 48;
+// A gap longer than this means the loop was parked, not slow — don't sample it.
+const DPR_SAMPLE_MAX_GAP_MS = 200;
+
 export const useLensField = (
   canvasRef: RefObject<HTMLCanvasElement | null>,
   sourceRef: RefObject<HTMLCanvasElement | null>,
@@ -49,10 +74,21 @@ export const useLensField = (
     const reduced = profile.reducedMotion;
     const finePointer = profile.enablePointerParallax;
     const idleDrift = profile.enableIdleDrift;
-    const dpr = Math.min(window.devicePixelRatio || 1, profile.dprCap);
-    // 0 = every rAF (match display). Positive values throttle for budgets.
-    const frameInterval =
-      profile.targetFps > 0 ? 1000 / profile.targetFps : 0;
+
+    // Resolution ladder. We start at the profile cap and only ever step down,
+    // so a struggling device settles instead of oscillating between steps.
+    const dprLadder: number[] = [];
+    {
+      const base = Math.min(window.devicePixelRatio || 1, profile.dprCap);
+      for (const step of [base, base * 0.75, 1]) {
+        const v = Math.max(1, Math.round(step * 100) / 100);
+        if (!dprLadder.length || v < dprLadder[dprLadder.length - 1] - 0.01) {
+          dprLadder.push(v);
+        }
+      }
+    }
+    let dprStep = 0;
+    let dpr = dprLadder[0];
 
     // Transparent clear so empty lens areas composite over later sections.
     // Straight (non-premultiplied) alpha: OGL's transparent programs blend with
@@ -65,11 +101,26 @@ export const useLensField = (
         dpr,
         alpha: true,
         antialias: false,
+        // No depth or stencil attachment: this is one fullscreen triangle with
+        // depthTest off. Skipping them saves a full-size buffer allocation,
+        // which is real memory at DPR 2 on a canvas this tall.
+        depth: false,
+        stencil: false,
         premultipliedAlpha: false,
+        // Deliberately not "high-performance" — that can force the discrete GPU
+        // on dual-GPU Macs, and this is a decorative background that the
+        // integrated GPU handles without noticing.
       });
     } catch {
       return;
     }
+    // OGL's constructor calls setSize(300, 150), which assigns inline
+    // style.width/height on our canvas. Those would beat the CSS box the
+    // element is supposed to be sized by, so drop them — everything below
+    // measures the element and writes only the backing store.
+    canvas.style.removeProperty("width");
+    canvas.style.removeProperty("height");
+
     const gl = renderer.gl;
     if (!gl || gl.isContextLost()) return;
     gl.clearColor(0, 0, 0, 0);
@@ -83,6 +134,8 @@ export const useLensField = (
     const bulge = arcsOnly ? 1 : preset.bulge;
     const chroma = arcsOnly || profile.cheapShaders ? 0 : preset.chroma;
     const warp = arcsOnly || profile.cheapShaders ? 0 : preset.warp;
+    const grainAmount =
+      arcsOnly || profile.cheapShaders ? 0 : LENS_GRAIN.amount;
     const tileTexture = new Texture(gl, {
       generateMipmaps: false,
       premultiplyAlpha: false,
@@ -104,6 +157,7 @@ export const useLensField = (
         tTileState: { value: tileTexture },
         uTileStateSize: { value: [1, 1] },
         uResolution: { value: [1, 1] },
+        uUnit: { value: 1 },
         uMapSize: { value: [1, 1] },
         uCell: { value: CELL },
         uWarp: { value: warp },
@@ -121,9 +175,7 @@ export const useLensField = (
         },
         uPointerTilt: { value: finePointer ? LENS_POINTER.tilt : 0 },
         uPointerRotate: { value: finePointer ? LENS_POINTER.rotate : 0 },
-        uGrainAmount: {
-          value: arcsOnly || profile.cheapShaders ? 0 : LENS_GRAIN.amount,
-        },
+        uGrainAmount: { value: grainAmount },
         uGrainScale: { value: LENS_GRAIN.scale },
         uTime: { value: 0 },
         uFocusCenter: { value: [0, 0] },
@@ -159,27 +211,53 @@ export const useLensField = (
     const mesh = new Mesh(gl, { geometry, program });
 
     let raf = 0;
-    let lastDraw = 0;
-    let heroOffscreen = false;
+    let onScreen = true;
+    // Set whenever a uniform actually changes. Frames that would redraw an
+    // identical image are skipped — at rest the lens costs nothing.
+    let needsDraw = true;
     const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
     let pointerTime = performance.now();
     let lastPointerMove = performance.now();
     let driftMix = 0;
+    let lastScroll = -1;
     const grainStarted = performance.now();
+    let drawGapStart = 0;
+    let drawGapFrames = 0;
+    let lastDrawAt = 0;
 
-    // Document-space layout, refreshed on resize — scroll frames only read
-    // window.scrollY (no getBoundingClientRect thrash on the hot path).
+    // Document/box-space layout, refreshed only on resize. Nothing here is
+    // scroll-dependent any more: the canvas shares the hero's containing block,
+    // so the focus oval sits at a fixed offset within it.
     const layout = {
       heroTop: 0,
       heroHeight: 1,
-      focusCx: 0,
-      focusCy: 0,
-      focusW: 0,
-      focusH: 0,
-      vw: 1,
-      vh: 1,
-      stretch: LENS_FOCUS.stretch,
-      padding: LENS_FOCUS.padding,
+      canvasW: 1,
+      canvasH: 1,
+      // CSS px per ring unit. The hero's own height, not innerHeight — on iOS
+      // innerHeight shrinks when the URL bar collapses mid-scroll, which would
+      // resize the ring while you scroll.
+      unit: 1,
+    };
+
+    const setBackingSize = () => {
+      const bw = Math.max(Math.round(layout.canvasW * dpr), 1);
+      const bh = Math.max(Math.round(layout.canvasH * dpr), 1);
+      if (canvas.width !== bw || canvas.height !== bh) {
+        canvas.width = bw;
+        canvas.height = bh;
+        // Force OGL to re-issue gl.viewport — resizing the drawing buffer does
+        // not reset it, and OGL caches the last values.
+        renderer.state.viewport.width = null;
+        renderer.state.viewport.height = null;
+      }
+      // Assign directly instead of renderer.setSize(): setSize writes inline
+      // style.width/height, which would fight the CSS box we measure from.
+      renderer.dpr = dpr;
+      renderer.width = bw / dpr;
+      renderer.height = bh / dpr;
+      program.uniforms.uResolution.value = [layout.canvasW, layout.canvasH];
+      program.uniforms.uUnit.value = Math.max(layout.unit, 1);
+      needsDraw = true;
     };
 
     // CSS px of the TileField box — must match the sim's cell phase, not any
@@ -187,7 +265,10 @@ export const useLensField = (
     const syncMapSize = () => {
       const w = source.clientWidth || source.getBoundingClientRect().width;
       const h = source.clientHeight || source.getBoundingClientRect().height;
-      if (w > 0 && h > 0) program.uniforms.uMapSize.value = [w, h];
+      if (w > 0 && h > 0) {
+        program.uniforms.uMapSize.value = [w, h];
+        needsDraw = true;
+      }
     };
 
     const syncTileState = () => {
@@ -205,22 +286,28 @@ export const useLensField = (
       tileTexture.image = map.data;
       tileTexture.needsUpdate = true;
       uploadedVersion = map.version;
+      needsDraw = true;
     };
 
+    // Fit the content oval to the intro copy. Purely a layout read — the result
+    // holds for every scroll position, because canvas and copy scroll together.
     const captureLayout = () => {
       const sy = window.scrollY;
-      const sx = window.scrollX;
       const heroRect = hero.getBoundingClientRect();
+      const canvasRect = canvas.getBoundingClientRect();
       const focusRect = focus.getBoundingClientRect();
+
       layout.heroTop = heroRect.top + sy;
       layout.heroHeight = Math.max(heroRect.height, 1);
-      layout.focusW = focusRect.width;
-      layout.focusH = focusRect.height;
-      layout.focusCx = focusRect.left + sx + focusRect.width * 0.5;
-      layout.focusCy = focusRect.top + sy + focusRect.height * 0.5;
-      layout.vw = Math.max(window.innerWidth, 1);
-      layout.vh = Math.max(window.innerHeight, 1);
-      const aspect = layout.vw / layout.vh;
+      layout.canvasW = Math.max(canvasRect.width, 1);
+      layout.canvasH = Math.max(canvasRect.height, 1);
+      layout.unit = Math.max(heroRect.height, 1);
+
+      const unit = layout.unit;
+      // Ring stretch still keys off the *viewport* shape — it is about how the
+      // copy reads on screen, not how tall the overhanging canvas is.
+      const aspect =
+        Math.max(window.innerWidth, 1) / Math.max(window.innerHeight, 1);
       const stretchT = Math.min(
         1,
         Math.max(
@@ -229,22 +316,21 @@ export const useLensField = (
             (LENS_FOCUS.stretchAspectTo - LENS_FOCUS.stretchAspectFrom),
         ),
       );
-      layout.stretch =
+      const stretch =
         LENS_FOCUS.stretchNarrow +
         (LENS_FOCUS.stretch - LENS_FOCUS.stretchNarrow) * stretchT;
-      layout.padding = LENS_FOCUS.padding * (0.65 + 0.35 * stretchT);
-    };
+      const padding = LENS_FOCUS.padding * (0.65 + 0.35 * stretchT);
 
-    // Fit the content oval from cached document coords + current scroll.
-    const updateFocus = () => {
-      if (layout.focusW <= 0 || layout.focusH <= 0) return;
-      const { vw, vh, stretch, padding, focusW, focusH } = layout;
-      const cx = layout.focusCx - window.scrollX;
-      const cy = layout.focusCy - window.scrollY;
-      const qcx = (cx - vw * 0.5) / vh;
-      const qcy = (vh * 0.5 - cy) / vh;
-      const halfW = focusW * 0.5 / vh + padding;
-      const halfH = focusH * 0.5 / vh + padding;
+      if (focusRect.width <= 0 || focusRect.height <= 0) return;
+
+      // Focus centre as an offset from the canvas centre, in ring units.
+      const cx = focusRect.left - canvasRect.left + focusRect.width * 0.5;
+      const cy = focusRect.top - canvasRect.top + focusRect.height * 0.5;
+      const qcx = (cx - layout.canvasW * 0.5) / unit;
+      const qcy = (layout.canvasH * 0.5 - cy) / unit;
+
+      const halfW = (focusRect.width * 0.5) / unit + padding;
+      const halfH = (focusRect.height * 0.5) / unit + padding;
       const radius = Math.max(
         LENS_FOCUS.minRadius,
         Math.sqrt((halfW / stretch) ** 2 + halfH ** 2),
@@ -258,32 +344,66 @@ export const useLensField = (
       program.uniforms.uFocusRadius.value = radius;
       program.uniforms.uFocusStretch.value = stretch;
       program.uniforms.uArcScale.value = arcScale;
+      needsDraw = true;
     };
 
-    // scrollY vs cached hero top — avoids layout reads every rAF.
-    // Returns raw 0..1 progress before smoothstep (for off-screen pause).
+    // scrollY vs cached hero top — the only per-frame scroll read left, and the
+    // only thing it drives is the slow exit spin/expand/dissolve.
     const sampleScroll = () => {
       const raw = Math.min(
         Math.max((window.scrollY - layout.heroTop) / layout.heroHeight, 0),
         1,
       );
-      const eased = raw * raw * (3.0 - 2.0 * raw);
-      program.uniforms.uScroll.value = reduced ? 0 : eased;
+      const eased = reduced ? 0 : raw * raw * (3.0 - 2.0 * raw);
+      if (Math.abs(eased - lastScroll) > 0.0002) {
+        lastScroll = eased;
+        program.uniforms.uScroll.value = eased;
+        needsDraw = true;
+      }
       return raw;
     };
 
     const render = () => {
-      updateFocus();
-      const now = performance.now();
+      needsDraw = false;
+      renderer.render({ scene: mesh });
+
+      // Adaptive resolution: watch the gap between consecutive draws while the
+      // lens is actually animating and step DPR down if we are slipping.
+      if (dprStep < dprLadder.length - 1) {
+        const now = performance.now();
+        const gap = now - lastDrawAt;
+        lastDrawAt = now;
+        if (gap > 0 && gap < DPR_SAMPLE_MAX_GAP_MS) {
+          if (drawGapFrames === 0) drawGapStart = now - gap;
+          drawGapFrames++;
+          if (drawGapFrames >= DPR_SAMPLE_FRAMES) {
+            const avg = (now - drawGapStart) / drawGapFrames;
+            drawGapFrames = 0;
+            if (avg > DPR_DOWNGRADE_MS) {
+              dprStep++;
+              dpr = dprLadder[dprStep];
+              setBackingSize();
+            }
+          }
+        } else {
+          drawGapFrames = 0;
+        }
+      }
+    };
+
+    // Per-frame animated inputs (pointer easing, idle drift, grain). None of
+    // these exist on touch, which is why the phone settles to zero draws.
+    const stepMotion = (now: number) => {
       const dt = Math.min(0.05, (now - pointerTime) / 1000);
       pointerTime = now;
+      if (reduced) return;
 
       // Idle Lissajous folds into the catch-up *target*, so the ring yields
       // into drift (and back to the mouse) with the same lag as a cursor
       // re-entering from off-screen. Desktop / fine-pointer only.
       let driftX = 0;
       let driftY = 0;
-      if (!reduced && idleDrift && LENS_DRIFT.amplitude > 0) {
+      if (idleDrift && LENS_DRIFT.amplitude > 0) {
         const idleSec = (now - lastPointerMove) / 1000;
         const want = idleSec > LENS_DRIFT.idleAfter ? 1 : 0;
         const tau = want > driftMix ? LENS_DRIFT.blendIn : LENS_DRIFT.blendOut;
@@ -299,57 +419,51 @@ export const useLensField = (
         }
       }
 
-      if (!reduced) {
-        const s = finePointer ? LENS_POINTER.follow : 0;
-        const targetX = pointer.tx * s + driftX;
-        const targetY = pointer.ty * s + driftY;
-        const k =
-          1 - Math.exp(-dt / Math.max(LENS_POINTER.catchUp, 0.001));
-        pointer.x += (targetX - pointer.x) * k;
-        pointer.y += (targetY - pointer.y) * k;
+      const s = finePointer ? LENS_POINTER.follow : 0;
+      const targetX = pointer.tx * s + driftX;
+      const targetY = pointer.ty * s + driftY;
+      const k = 1 - Math.exp(-dt / Math.max(LENS_POINTER.catchUp, 0.001));
+      const nextX = pointer.x + (targetX - pointer.x) * k;
+      const nextY = pointer.y + (targetY - pointer.y) * k;
+      if (
+        Math.abs(nextX - pointer.x) > 1e-5 ||
+        Math.abs(nextY - pointer.y) > 1e-5
+      ) {
+        pointer.x = nextX;
+        pointer.y = nextY;
         program.uniforms.uPointer.value = [pointer.x, pointer.y];
+        needsDraw = true;
       }
 
-      if (!reduced && !profile.cheapShaders && LENS_GRAIN.fps > 0) {
-        program.uniforms.uTime.value =
-          ((now - grainStarted) / 1000) * LENS_GRAIN.fps;
+      if (grainAmount > 0 && LENS_GRAIN.fps > 0) {
+        const frame = Math.floor(((now - grainStarted) / 1000) * LENS_GRAIN.fps);
+        if (frame !== program.uniforms.uTime.value) {
+          program.uniforms.uTime.value = frame;
+          needsDraw = true;
+        }
       }
-      // Arcs-only never samples the bed — skip scoreboard uploads there.
-      if (!arcsOnly) syncTileState();
-      renderer.render({ scene: mesh });
     };
 
     const stopLoop = () => {
       cancelAnimationFrame(raf);
       raf = 0;
+      drawGapFrames = 0;
     };
 
     const loop = () => {
-      raf = 0;
-      if (document.hidden) return;
-
-      const raw = sampleScroll();
-      if (!reduced && raw >= 1) {
-        if (!heroOffscreen) {
-          heroOffscreen = true;
-          render();
-        }
-        return;
-      }
-      heroOffscreen = false;
-
-      const now = performance.now();
-      if (frameInterval <= 0 || now - lastDraw >= frameInterval) {
-        lastDraw = now;
-        render();
-      }
       raf = requestAnimationFrame(loop);
+      sampleScroll();
+      stepMotion(performance.now());
+      // Arcs-only never samples the bed — skip scoreboard uploads there.
+      if (!arcsOnly) syncTileState();
+      if (needsDraw) render();
     };
 
     const ensureLoop = () => {
-      if (reduced || document.hidden || raf) return;
+      if (reduced || document.hidden || !onScreen || raf) return;
       pointerTime = performance.now();
-      lastDraw = 0;
+      lastDrawAt = performance.now();
+      drawGapFrames = 0;
       raf = requestAnimationFrame(loop);
     };
 
@@ -372,26 +486,22 @@ export const useLensField = (
       lastPointerMove = performance.now();
     };
 
+    // Only needed to restart a loop parked by IntersectionObserver at the exact
+    // moment the canvas re-enters; the running loop samples scroll itself.
     const onScroll = () => {
-      // Wake the loop when the hero re-enters after an off-screen pause.
-      // Live sampling still happens inside rAF while the loop is running.
-      if (heroOffscreen || !raf) ensureLoop();
+      if (!raf) ensureLoop();
     };
 
-    const resize = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      // setSize clears the drawing buffer — paint this frame immediately so
-      // a resize can't leave a transparent flash until the next tick.
-      renderer.setSize(w, h);
-      program.uniforms.uResolution.value = [w, h];
+    // Box changes come from the canvas's own ResizeObserver, so this only has
+    // to re-derive the focus fit. Notably it does NOT run on iOS URL-bar
+    // collapse, because nothing here is keyed to window.innerHeight.
+    const relayout = () => {
       syncMapSize();
       captureLayout();
+      setBackingSize();
       sampleScroll();
-      updateFocus();
-      lastDraw = performance.now();
       render();
-      if (!reduced) ensureLoop();
+      ensureLoop();
     };
 
     const onVisibility = () => {
@@ -399,20 +509,40 @@ export const useLensField = (
       else ensureLoop();
     };
 
-    resize();
-    const sourceObserver = new ResizeObserver(syncMapSize);
+    relayout();
+
+    const sourceObserver = new ResizeObserver(() => {
+      syncMapSize();
+      captureLayout();
+    });
     sourceObserver.observe(source);
+    // The canvas box drives the backing store; the hero drives the ring unit;
+    // the focus box drives the oval fit. All three are layout-rate, not
+    // scroll-rate.
+    const canvasObserver = new ResizeObserver(relayout);
+    canvasObserver.observe(canvas);
     const focusObserver = new ResizeObserver(() => {
       captureLayout();
-      updateFocus();
+      ensureLoop();
     });
     focusObserver.observe(focus);
-    // Hero height can change with URL-bar / dynamic type — keep scroll math honest.
     const heroObserver = new ResizeObserver(() => {
       captureLayout();
+      ensureLoop();
     });
     heroObserver.observe(hero);
-    window.addEventListener("resize", resize);
+
+    // Park the loop entirely once the lens has scrolled out of range.
+    const visibility = new IntersectionObserver(
+      (entries) => {
+        onScreen = entries[entries.length - 1].isIntersecting;
+        if (onScreen) ensureLoop();
+        else stopLoop();
+      },
+      { rootMargin: "20% 0px" },
+    );
+    visibility.observe(canvas);
+
     window.addEventListener("scroll", onScroll, { passive: true });
     document.addEventListener("visibilitychange", onVisibility);
     // Hold the last pointer pose when the cursor leaves the page — no snap
@@ -421,15 +551,15 @@ export const useLensField = (
       window.addEventListener("pointermove", onPointerMove, { passive: true });
     }
     if (!reduced) ensureLoop();
-    else render();
     onActiveChange?.(true);
 
     return () => {
       stopLoop();
       sourceObserver.disconnect();
+      canvasObserver.disconnect();
       focusObserver.disconnect();
       heroObserver.disconnect();
-      window.removeEventListener("resize", resize);
+      visibility.disconnect();
       window.removeEventListener("scroll", onScroll);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pointermove", onPointerMove);

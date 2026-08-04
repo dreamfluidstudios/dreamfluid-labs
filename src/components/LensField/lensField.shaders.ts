@@ -3,6 +3,12 @@
 // cols×rows scoreboard) so the band bulges can bend all of it. TileField's
 // DOM layers are hidden while the lens is active — see HeroBackdropSection.
 //
+// Ring geometry is authored in "unit" space — one unit = uUnit CSS px, the
+// hero's own height. The canvas is taller than the hero (it overhangs so the
+// expanding ring can reach the next section), so uResolution.y / uUnit > 1 and
+// the vertical span has to be scaled by that ratio rather than assumed 1.0.
+// When canvas height == uUnit this collapses to the old viewport-space math.
+//
 // The fragment source is generated from the LENS_ARCS data (GLSL ES 1.00 has
 // no const-array initializers, so the per-band calls are unrolled at build
 // time). Band look/placement is tuned in lensField.presets.ts, not here.
@@ -37,10 +43,13 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
 
   uniform sampler2D tTileState; // cols×rows lit-cell scoreboard (NEAREST)
   uniform vec2 uTileStateSize; // scoreboard size in cells
-  uniform vec2 uResolution;    // lens canvas size in CSS px (viewport)
-  uniform vec2 uMapSize;       // TileField box size in CSS px — grid phase
-                               // must use this, not uResolution, or lit tiles
-                               // drift when hero box ≠ window
+  uniform vec2 uResolution;    // lens canvas size in CSS px
+  uniform float uUnit;         // CSS px per ring unit (hero height). Stable
+                               // across iOS URL-bar collapse, unlike innerHeight
+  uniform vec2 uMapSize;       // TileField box size in CSS px. The canvas shares
+                               // this box's top-left origin and width, so bed px
+                               // come straight from uResolution; uMapSize.y is
+                               // only the cutoff where the grid bed ends
   uniform float uCell;         // grid cell size in CSS px (TileField CELL)
   uniform float uWarp;         // max UV pull under a band's bulge
   uniform float uBulge;        // warp width vs fringe (1 = same, >1 = wider)
@@ -132,17 +141,23 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
     ridge = max(ridge, bulge);
   }
 
+  // Canvas UV → TileField-box CSS px. The lens canvas is absolutely positioned
+  // on the hero's top-left with the same width, so this is already the source
+  // box's coordinate space — it just runs past uMapSize.y into the overhang.
+  vec2 bedPx(vec2 uv) {
+    return vec2(uv.x, 1.0 - uv.y) * uResolution;
+  }
+
   // The static grid bed, replacing TileField's CSS-gradient div: 1px lines on
   // the same 72px cells, alphas matched to the original (0.10 horizontal /
   // 0.09 vertical lines under the div's 0.55 layer opacity).
-  // Drawn in the source box's CSS pixel space so cell edges share phase with
-  // the lit-cell scoreboard (even if the lens viewport is a slightly
-  // different size).
+  // Faded out below the hero's bottom edge so the overhang carries arcs only.
   vec3 grid(vec2 uv) {
-    vec2 px = vec2(uv.x, 1.0 - uv.y) * uMapSize;
+    vec2 px = bedPx(uv);
     vec2 g = mod(px, uCell);
     float a = step(g.y, 1.0) * 0.055 + step(g.x, 1.0) * 0.0495;
-    return vec3(a);
+    float inBed = 1.0 - smoothstep(uMapSize.y - uCell, uMapSize.y, px.y);
+    return vec3(a * inBed);
   }
 
   // Lit tiles from the compact scoreboard: one texel per cell (NEAREST).
@@ -150,7 +165,7 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   // old canvas strokeRect so tiles keep a faint outline.
   vec3 litTiles(vec2 uv) {
     if (uTileStateSize.x < 1.0 || uTileStateSize.y < 1.0) return vec3(0.0);
-    vec2 px = vec2(uv.x, 1.0 - uv.y) * uMapSize;
+    vec2 px = bedPx(uv);
     vec2 cell = floor(px / max(uCell, 1.0));
     if (cell.x < 0.0 || cell.y < 0.0 ||
         cell.x >= uTileStateSize.x || cell.y >= uTileStateSize.y) {
@@ -176,10 +191,15 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   }
 
   void main() {
-    float aspect = uResolution.x / uResolution.y;
-    // Fragment offset from the content oval center, aspect-corrected.
-    // (q.x, q.y) = ((px - cx) / vh, (cy - py) / vh) — see updateFocus.
-    vec2 q = (vUv - 0.5) * vec2(aspect, 1.0) - uFocusCenter;
+    // Ring space: CSS px / uUnit on both axes, so a unit is the same on-screen
+    // distance horizontally and vertically. aspect matches the old vw/vh when
+    // the canvas spans the viewport; vSpan is the canvas's own height in units
+    // (> 1 because of the overhang).
+    float aspect = uResolution.x / uUnit;
+    float vSpan = uResolution.y / uUnit;
+    // Fragment offset from the content oval center, in ring units.
+    // (q.x, q.y) = ((px - cx) / unit, (cy - py) / unit) — see captureLayout.
+    vec2 q = (vUv - 0.5) * vec2(aspect, vSpan) - uFocusCenter;
 
     // Mouse perspective on the arc frame only (ring slides + foreshortens +
     // slight Z rotate; backdrop sampling still uses unshifted q / vUv).
@@ -205,8 +225,8 @@ ${arcs.map(arcCall).join("\n")}
     // Rotate disp back into screen space (it was accumulated on qr).
     disp = vec2(ca * disp.x - sa * disp.y, sa * disp.x + ca * disp.y);
 
-    // disp was accumulated in aspect-corrected space; convert back to UV.
-    vec2 dispUv = disp / vec2(aspect, 1.0);
+    // disp was accumulated in ring units; convert back to canvas UV.
+    vec2 dispUv = disp / vec2(aspect, vSpan);
 
     // Film grain on the fringe only — centered noise so average brightness
     // holds, and zero fringe means zero grain (no grey lift on the void).
@@ -292,6 +312,16 @@ ${arcs.map(arcCall).join("\n")}
       presence = exitFade;
     }
 
-    gl_FragColor = vec4(outRgb, presence);
+    // The canvas has a bottom edge, and the ring expands toward it on scroll
+    // exit. LensField's BOX is sized so the ring is already gone before this
+    // band, but a retuned expand/radius could push a live glow into it — and a
+    // glow meeting the edge of its own canvas terminates in a hard horizontal
+    // line, which is unmistakably a bug. Ramp the last 8% to zero so the worst
+    // case is a soft falloff instead. Applied to colour as well as alpha so it
+    // holds for the additive and screen blends, where alpha is not the coverage.
+    float depth = 1.0 - vUv.y; // 0 at canvas top, 1 at the bottom edge
+    float edgeFade = 1.0 - smoothstep(0.92, 1.0, depth);
+
+    gl_FragColor = vec4(outRgb * edgeFade, presence * edgeFade);
   }
 `;

@@ -1,4 +1,5 @@
 import { useLayoutEffect, type RefObject } from "react";
+import { registerScrollFrame } from "@/utils/scrollFrame";
 
 type ScrollFadeOptions = {
   // Blur/dissolve as the block leaves the top of the viewport.
@@ -17,9 +18,15 @@ type ScrollFadeOptions = {
 const ease = (p: number) => p * p * (3.0 - 2.0 * p);
 
 // Drives a balanced scroll dissolve: blur-in from below, blur-out through the
-// top. Writes --enter-fade / --exit-fade (and --scroll-fade = max of both)
-// for the .scroll-fade CSS hook. data-fading toggles the filter so a resting
-// blur(0) never flattens stacking against the fixed lens.
+// top. Writes --scroll-fade for the .scroll-fade CSS hook, and toggles
+// data-fading so a resting blur(0) never costs a filter pass. Touch drops the
+// blur entirely and rides opacity alone — see globals.css.
+//
+// Reads and writes go through the shared scroll frame so this never forces a
+// layout against the other scroll-linked effects, and the write is skipped
+// unless the quantised value actually moved: at three decimals the opacity
+// step is already below what a display can show, so anything finer is a style
+// recalc that changes nothing.
 export const useScrollFade = (
   ref: RefObject<HTMLElement | null>,
   // Default start is low so enter/exit dissolve while a large slice of the
@@ -32,18 +39,16 @@ export const useScrollFade = (
     const el = ref.current;
     if (!el) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      el.style.setProperty("--enter-fade", "0");
-      el.style.setProperty("--exit-fade", "0");
       el.style.setProperty("--scroll-fade", "0");
       el.dataset.fading = "false";
       return;
     }
 
-    let raf = 0;
     const span = Math.max(1 - start, 0.15);
+    let fade = 0;
+    let written = -1;
 
-    const update = () => {
-      raf = 0;
+    const measure = () => {
       const rect = el.getBoundingClientRect();
       const h = Math.max(rect.height, 1);
       const vh = window.innerHeight;
@@ -62,24 +67,17 @@ export const useScrollFade = (
         enterP = ease(Math.min(Math.max(enterP, 0), 1));
       }
 
-      const fade = Math.max(enterP, exitP);
-      el.style.setProperty("--enter-fade", enterP.toFixed(4));
-      el.style.setProperty("--exit-fade", exitP.toFixed(4));
-      el.style.setProperty("--scroll-fade", fade.toFixed(4));
-      el.dataset.fading = fade > 0.001 ? "true" : "false";
+      fade = Math.round(Math.max(enterP, exitP) * 1000) / 1000;
     };
 
-    const schedule = () => {
-      if (!raf) raf = requestAnimationFrame(update);
+    const apply = () => {
+      if (fade === written) return;
+      written = fade;
+      el.style.setProperty("--scroll-fade", String(fade));
+      const fading = fade > 0.001 ? "true" : "false";
+      if (el.dataset.fading !== fading) el.dataset.fading = fading;
     };
 
-    update();
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-    };
+    return registerScrollFrame({ measure, apply });
   }, [ref, exit, enter, start]);
 };

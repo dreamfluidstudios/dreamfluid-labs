@@ -19,6 +19,10 @@ export const CELL = 72;
 // row. A fixed glide speed (px per ms) so the trail moves the same on any
 // screen — wider viewports simply take longer to cross. One trail at a time,
 // with a random idle gap between them.
+//
+// Desktop only — gated on DeviceProfile.enableIdleTrails. The effect is
+// "someone is moving a cursor over the field", which needs a cursor to be
+// legible; on touch it just reads as the backdrop twitching by itself.
 const SWEEP_SPEED = 0.45; // px/ms
 const SWEEP_GAP_MIN_MS = 1800;
 const SWEEP_GAP_MAX_MS = 5000;
@@ -111,6 +115,11 @@ export const useTileField = (
     // Hover trails / click ripples are desktop-only. Real touch and
     // ?device=touch / FORCE_DEVICE share this gate so emulation matches phones.
     const pointerInteractive = profile.finePointer;
+    // Idle auto-trails are desktop-only for the same reason: they read as a
+    // cursor being dragged across the field, and on a phone there is no cursor
+    // to motivate them. Programmatic ripples (the slam landing) still fire —
+    // those are part of the intro choreography, not ambient motion.
+    const idleTrails = profile.enableIdleTrails;
     const stateOnly = !!tileStateRef;
     const markDirty = () => {
       if (sourceDirtyRef) sourceDirtyRef.current = true;
@@ -127,12 +136,14 @@ export const useTileField = (
     // so the bitmap always matches its on-screen size 1:1 and the lit tiles stay
     // locked to the CSS grid bed — even on mobile, where the element's height
     // (100vh) and window.innerHeight diverge behind the URL bar. width/height are
-    // CSS px; originX/originY are the canvas's viewport offset, used to map
-    // pointer/event coordinates (which are viewport-relative) into local space.
+    // CSS px; docX/docY are the canvas's *document*-space offset, so pointer
+    // mapping can subtract the current scroll instead of re-measuring. Measuring
+    // per scroll event forced a synchronous layout on the scroll hot path, which
+    // is exactly the kind of main-thread stall that stutters iOS momentum.
     let width = 0;
     let height = 0;
-    let originX = 0;
-    let originY = 0;
+    let docX = 0;
+    let docY = 0;
     // Idle auto-trail: an in-flight sweep (a virtual cursor at pixel x on `row`
     // moving in `dir`), plus the pending timer for the next one. `sweeping`
     // gates the whole loop until the hero signals its entrance is done.
@@ -140,14 +151,14 @@ export const useTileField = (
     let sweepTimer = 0;
     let sweeping = false;
 
-    // Cheap re-read of the canvas's box; scroll only shifts the origin, so it
-    // updates offsets without touching the (unchanged) bitmap size.
+    // Layout read — resize/observer only, never on scroll. Document-space
+    // origin so scroll can be applied arithmetically at use time.
     const measure = () => {
       const rect = canvas.getBoundingClientRect();
       width = rect.width;
       height = rect.height;
-      originX = rect.left;
-      originY = rect.top;
+      docX = rect.left + window.scrollX;
+      docY = rect.top + window.scrollY;
     };
 
     // Map a viewport-space point into canvas CSS pixels.
@@ -160,7 +171,11 @@ export const useTileField = (
           y: (clientY / vh) * height,
         };
       }
-      return { x: clientX - originX, y: clientY - originY };
+      // scrollX/scrollY are cheap reads; getBoundingClientRect here would not be.
+      return {
+        x: clientX - (docX - window.scrollX),
+        y: clientY - (docY - window.scrollY),
+      };
     };
 
     const ensureStateBuffer = (nextCols: number, nextRows: number) => {
@@ -403,6 +418,7 @@ export const useTileField = (
     }
 
     const onSweepStart = () => {
+      if (!idleTrails) return;
       if (sweeping) return; // one-shot: ignore repeat signals
       sweeping = true;
       startSweep();
@@ -419,19 +435,17 @@ export const useTileField = (
     // itself; scroll only shifts the viewport offset, so it just re-measures.
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
-    window.addEventListener("scroll", measure, { passive: true });
     if (pointerInteractive) {
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerdown", down);
       document.documentElement.addEventListener("pointerleave", leave);
     }
     window.addEventListener(TILE_RIPPLE_EVENT, onRippleEvent);
-    window.addEventListener(TILE_SWEEP_EVENT, onSweepStart);
+    if (idleTrails) window.addEventListener(TILE_SWEEP_EVENT, onSweepStart);
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(sweepTimer);
       observer.disconnect();
-      window.removeEventListener("scroll", measure);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener(TILE_RIPPLE_EVENT, onRippleEvent);
