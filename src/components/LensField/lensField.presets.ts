@@ -231,6 +231,32 @@ export const LENS_ARCS: LensArc[] = [
   { angle: -135, arcLength: 35, gap: 0.055, thickness: 0.035, intensity: 0.55 }, // Lower Left Arc
 ];
 
+// Whether the lens animates on scroll at all — the rotate + expand + dissolve
+// exit driven by uScroll.
+//
+// Off on touch, because it is the entire per-frame cost of the lens. The exit
+// is the only uniform that changes while scrolling, and useLensField redraws
+// whenever it changes, so every scroll frame repaints the whole canvas. Note
+// that zeroing rotate and expand does NOT avoid this: the dissolve alone keeps
+// uScroll moving, so the redraws happen regardless and only the picture gets
+// less interesting.
+//
+// With it off, nothing varies per frame. Idle drift and pointer parallax are
+// already fine-pointer only, and LENS_GRAIN.fps is 0, so after the intro the
+// tile scoreboard stops changing and the lens draws exactly once. The canvas
+// then behaves as a static texture that the compositor translates with the
+// page — which is what the in-flow positioning was always for.
+//
+// Force either way with ?lensexit=on|off to A/B on a real device.
+export const resolveLensScrollExit = (touch: boolean): boolean => {
+  if (typeof window !== "undefined") {
+    const q = new URLSearchParams(window.location.search).get("lensexit");
+    if (q === "on") return true;
+    if (q === "off") return false;
+  }
+  return !touch;
+};
+
 export const resolveLensPreset = (): LensPreset => {
   if (typeof window === "undefined") return LENS_PRESETS[DEFAULT_LENS_PRESET];
   const q = new URLSearchParams(window.location.search).get("lens");

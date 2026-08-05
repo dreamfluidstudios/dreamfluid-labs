@@ -11,6 +11,7 @@ import {
   LENS_SCROLL,
   resolveLensBlend,
   resolveLensPreset,
+  resolveLensScrollExit,
 } from "../lensField.presets";
 import {
   CELL,
@@ -121,6 +122,10 @@ export const useLensField = (
     const reduced = profile.reducedMotion;
     const finePointer = profile.enablePointerParallax;
     const idleDrift = profile.enableIdleDrift;
+    // Scroll-driven exit. Off on touch — see resolveLensScrollExit for why this
+    // one flag is the difference between redrawing every scroll frame and
+    // drawing once for the life of the page.
+    const scrollExit = resolveLensScrollExit(profile.touch);
 
     // Resolution ladder. We start at the profile cap and only ever step down,
     // so a struggling device settles instead of oscillating between steps.
@@ -474,6 +479,12 @@ export const useLensField = (
     // scrollY vs cached hero top — the only per-frame scroll read left, and the
     // only thing it drives is the slow exit spin/expand/dissolve.
     const sampleScroll = () => {
+      // Exit disabled: uScroll stays pinned at 0, so nothing here can ever set
+      // needsDraw and the canvas is drawn once and then only translated by the
+      // compositor. Returning before the scrollY read also keeps this off the
+      // scroll hot path entirely.
+      if (!scrollExit) return 0;
+
       const raw = Math.min(
         Math.max((window.scrollY - layout.heroTop) / layout.exitSpan, 0),
         1,
