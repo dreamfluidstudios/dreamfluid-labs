@@ -20,9 +20,8 @@ export const CELL = 72;
 // screen — wider viewports simply take longer to cross. One trail at a time,
 // with a random idle gap between them.
 //
-// Desktop only — gated on DeviceProfile.enableIdleTrails. The effect is
-// "someone is moving a cursor over the field", which needs a cursor to be
-// legible; on touch it just reads as the backdrop twitching by itself.
+// Gated on DeviceProfile.enableIdleTrails (on for touch and desktop; off
+// under prefers-reduced-motion).
 const SWEEP_SPEED = 0.45; // px/ms
 const SWEEP_GAP_MIN_MS = 1800;
 const SWEEP_GAP_MAX_MS = 5000;
@@ -115,10 +114,8 @@ export const useTileField = (
     // Hover trails / click ripples are desktop-only. Real touch and
     // ?device=touch / FORCE_DEVICE share this gate so emulation matches phones.
     const pointerInteractive = profile.finePointer;
-    // Idle auto-trails are desktop-only for the same reason: they read as a
-    // cursor being dragged across the field, and on a phone there is no cursor
-    // to motivate them. Programmatic ripples (the slam landing) still fire —
-    // those are part of the intro choreography, not ambient motion.
+    // Idle auto-trails run on touch and desktop (profile.enableIdleTrails).
+    // Programmatic ripples (the slam landing) still fire either way.
     const idleTrails = profile.enableIdleTrails;
     const stateOnly = !!tileStateRef;
     const markDirty = () => {

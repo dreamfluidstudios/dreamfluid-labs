@@ -30,9 +30,8 @@ const ZoomBlurField = dynamic(
 // existed. It is here as a perf bisect: it removes the lens canvas from the
 // page entirely, so if scrolling is still rough with ?backdrop=tiles then the
 // lens is not what is costing frames and the search should move elsewhere.
-// Note the fallback is genuinely cheap on touch — hover trails and idle sweeps
-// are desktop-only, so after the intro slam ripple the tile loop parks and the
-// backdrop is a static CSS grid plus an idle canvas.
+// Note the fallback stays cheap on touch — hover trails are desktop-only.
+// Idle sweeps still run; after each pass the tile loop parks until the next.
 //
 // TODO(both-mode): Stacked lens+zoom is shelved — compositing still left a
 // black outline / halo on the fringe. Ignore ?backdrop=both for now (falls

@@ -15,9 +15,8 @@ export type DeviceProfile = {
   enablePointerParallax: boolean;
   enableIdleDrift: boolean;
   enableScrollBlur: boolean;
-  // TileField's idle auto-trails — slow sweeps that read as a cursor being
-  // dragged across the field. Desktop only: with no cursor on screen to
-  // motivate them, they just look like the backdrop moving on its own.
+  // TileField's idle auto-trails — slow sweeps across the field. On for touch
+  // and desktop (still off under prefers-reduced-motion).
   enableIdleTrails: boolean;
   cheapShaders: boolean;
   zoomSamples: number;
@@ -114,7 +113,7 @@ export const resolveDeviceProfile = (): DeviceProfile => {
     enablePointerParallax: finePointer && !reducedMotion,
     enableIdleDrift: finePointer && !reducedMotion,
     enableScrollBlur: !touch && !reducedMotion,
-    enableIdleTrails: !touch && !reducedMotion,
+    enableIdleTrails: !reducedMotion,
     cheapShaders: budget.cheapShaders,
     zoomSamples: budget.zoomSamples,
   };
