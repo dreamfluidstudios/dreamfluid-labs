@@ -1,8 +1,18 @@
 // Every taste knob for the lens lives here — tune this file, not the shader.
-// Same named set as the CRT footer: flip DEFAULT_LENS_PRESET, or A/B with
-// ?lens=neutral|brand|mono|rgb and ?blend=normal|soft|add|screen.
+// Flip DEFAULT_LENS_PRESET, or A/B with
+// ?lens=neutral|dispersion|secondary|brand|mono|rgb
+// and ?blend=normal|soft|add|screen.
+//
+// (neutral/brand/mono/rgb share names with the CRT footer's set, but the two
+// are independent — dispersion/secondary exist here only.)
 
-export type LensPresetName = "neutral" | "brand" | "mono" | "rgb";
+export type LensPresetName =
+  | "neutral"
+  | "dispersion"
+  | "secondary"
+  | "brand"
+  | "mono"
+  | "rgb";
 
 export type LensPreset = {
   // Max UV pull under a band's bulge — how hard the grid/tiles bend where a
@@ -29,14 +39,64 @@ const WHITE: [number, number, number] = [250 / 255, 250 / 255, 250 / 255];
 const RGB_RED: [number, number, number] = [255 / 255, 56 / 255, 56 / 255];
 const RGB_CYAN: [number, number, number] = [56 / 255, 220 / 255, 255 / 255];
 
+// The warm/cool halves of a dispersion split, named so `neutral` and
+// `dispersion` can use the same pair in opposite order — the only difference
+// between those two presets is which side each lands on.
+const CA_WARM: [number, number, number] = [1.0, 0.42, 0.3];
+const CA_COOL: [number, number, number] = [0.45, 0.65, 1.0];
+
+// Secondary spectrum: what a corrected (achromatic) lens actually leaves behind
+// once red and blue have been brought to a common focus. Green is the
+// uncorrected outlier, and the residual reads green against magenta — magenta
+// being what red+blue look like together. Green is tempered rather than run to
+// full, because at equal numbers it reads far brighter than the magenta.
+const SECONDARY_GREEN: [number, number, number] = [0.45, 0.9, 0.5];
+const SECONDARY_MAGENTA: [number, number, number] = [1.0, 0.42, 0.85];
+
 const BASE = { warp: 0.04, bulge: 2.8, chroma: 0.35 } as const;
 
 export const LENS_PRESETS: Record<LensPresetName, LensPreset> = {
   // Warm red-orange inner, cool blue outer — real-lens chromatic split.
   neutral: {
     ...BASE,
-    tintOuter: [0.45, 0.65, 1.0],
-    tintInner: [1.0, 0.42, 0.3],
+    tintOuter: CA_COOL,
+    tintInner: CA_WARM,
+    tintStrength: 0.9,
+  },
+  // neutral with the split the other way up: cool inside, warm outside.
+  //
+  // This is the direction a simple uncorrected positive lens actually gives
+  // you. Shorter wavelengths refract harder, so blue is deflected more and
+  // lands at a smaller image height — on a bright band against black that puts
+  // blue on the inner edge and red trailing outside it. neutral does the
+  // reverse, so this is the textbook-dispersion answer to it.
+  //
+  // Whether it looks *better* is a separate question from whether it is more
+  // literal: real corrected glass over- or under-corrects and shows the fringe
+  // either way round, so both directions occur in actual photographs.
+  //
+  // Same tintStrength as neutral on purpose — the only variable between the two
+  // is which side each half of the spectrum sits on.
+  dispersion: {
+    ...BASE,
+    tintOuter: CA_WARM,
+    tintInner: CA_COOL,
+    tintStrength: 0.9,
+  },
+  // Green inner, magenta outer — the achromat residual rather than a raw
+  // dispersion split, and arguably the most "real modern lens" of the set:
+  // it is what you get from glass that has already been corrected, which is
+  // every lens anyone actually shoots with.
+  //
+  // Green sits inside because in a doublet corrected for red and blue, green is
+  // the wavelength left focusing short, which puts it at the smaller image
+  // height. Swap the two fields to test the opposite handedness.
+  //
+  // Also worth noting it avoids the blue/violet vocabulary entirely.
+  secondary: {
+    ...BASE,
+    tintOuter: SECONDARY_MAGENTA,
+    tintInner: SECONDARY_GREEN,
     tintStrength: 0.9,
   },
   // Brand-graded: Nebula inner, Starlight outer.
@@ -63,14 +123,21 @@ export const LENS_PRESETS: Record<LensPresetName, LensPreset> = {
   },
 };
 
-export const DEFAULT_LENS_PRESET: LensPresetName = "neutral";
+export const DEFAULT_LENS_PRESET: LensPresetName = "dispersion";
 
 // How far the focus ring spins and grows as the hero scrolls out of view.
 // Progress is 0 at the page top and 1 once the hero's bottom clears the
-// viewport top — see useLensField. expand is added to 1, so 1.4 → 2.4× radius.
+// viewport top — see useLensField. expand is added to 1, so 0.6 → 1.6× radius.
+//
+// This was 1.4 (2.4× radius). That much growth put the ring a long way below
+// the showcase card on anything narrower than a laptop: the card is
+// aspect-video so its height follows viewport *width*, while the ring follows
+// hero *height*, and on a tall phone the ring outruns it by ~470px. Growth is
+// also the expensive direction — every unit of expand has to be paid for in
+// LensField's BOX height, which is canvas the GPU fills and composites.
 export const LENS_SCROLL = {
   rotate: Math.PI * 0.42, // ~76° counter-clockwise at full exit
-  expand: 1.4,
+  expand: 0.6,
 };
 
 // Mouse-follow perspective on the arcs (fine pointers only). pointer is

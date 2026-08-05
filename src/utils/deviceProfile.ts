@@ -45,8 +45,15 @@ const TOUCH_PROFILE = {
   dprCap: 2,
   // 0 = every rAF (follow display refresh). Don't undersample scroll-driven GL.
   targetFps: 0,
-  // Turns off chroma (3× scene samples) + grain — real fill-rate savings that
-  // cost almost nothing visually at arc scale.
+  // Drops the chroma samples only. uChroma > 0 takes the shader's three-sample
+  // branch on *every* fragment, not just the ones under a band, so it is a 3×
+  // multiplier on bed sampling across the whole canvas — the one real fill-rate
+  // win available here.
+  //
+  // This used to cover bed warp and grain too, which was over-broad: neither
+  // adds work (see the notes in useLensField), so they were costing look for
+  // nothing and are back on for touch. Narrowed to chroma, the flag also now
+  // means the same thing in ZoomBlurField, which only ever used it for chroma.
   cheapShaders: true,
   zoomSamples: 5,
 } as const;

@@ -2,7 +2,6 @@
 
 import { useRef } from "react";
 import { ScrollFadeEdge } from "@/components/ScrollFade/ScrollFadeEdge";
-import { useScrollFade } from "@/components/ScrollFade/hooks/useScrollFade";
 import { useScrollGrow } from "./hooks/useScrollGrow";
 
 // Product showcase frame — 16:9 panel with external top light. Currently wired
@@ -13,27 +12,53 @@ import { useScrollGrow } from "./hooks/useScrollGrow";
 // above the fold. On desktop, scrolling reveals it while useScrollGrow scales
 // it up from a narrow inset to full size; on touch it stays full-width 16:9
 // in both orientations (no scroll resize).
-// No blur-in (already teased in the hero); blur-out as the footer takes over
-// on desktop — touch dissolves on opacity alone, see globals.css.
+//
+// NO SCROLL FADE — deliberate, unlike the hero and footer. This panel holds
+// playing video, and dissolving a playing video on the way out reads as a
+// glitch rather than as a transition: the eye tracks moving content, so it
+// follows the thing being faded instead of letting go of it. The reel stays at
+// full opacity for its whole pass. ScrollFadeEdge still frosts the *incoming*
+// boundary over the hero — that is about the seam between sections, not about
+// dissolving this one's content.
+//
+// This also takes the section off the scroll-linked path entirely: no fade
+// means no per-frame work and no compositor promotion (see the z-index note
+// below, which is what a fade here used to break).
 
 const SHOWCASE_YOUTUBE_ID = "";
 
 export const ShowcaseTeaser = () => {
-  const sectionRef = useRef<HTMLElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   useScrollGrow(panelRef);
-  // Exit early — on short viewports the CRT footer arrives while the panel
-  // is still sharp; a near-zero start dissolves the showcase sooner.
-  useScrollFade(sectionRef, { enter: false, start: 0 });
 
   const embedSrc = SHOWCASE_YOUTUBE_ID
     ? `https://www.youtube-nocookie.com/embed/${SHOWCASE_YOUTUBE_ID}?autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1&loop=1&playlist=${SHOWCASE_YOUTUBE_ID}`
     : null;
 
+  // The z-[3] below is load-bearing, and it is about stacking contexts rather
+  // than depth. The lens canvas sits at z-2 and overhangs the hero into this
+  // section. The panel's z-10 beats it only because nothing between them makes
+  // a stacking context, so every z-index competes at the document root (see the
+  // z-order map in LensField.tsx) — an emergent property, not a stated one.
+  //
+  // Anything that promotes this section collapses it: the panel's z-10 gets
+  // trapped inside and the section itself drops to z-auto, under the canvas,
+  // which paints the backdrop's grid lines straight across the product card.
+  // A fade here did exactly that (opacity < 1 promotes), and a CSS scroll
+  // timeline did it permanently rather than only mid-fade.
+  //
+  // The fade is gone now, so nothing is promoting this today. Keeping z-[3]
+  // anyway states the requirement instead of relying on the emergent version:
+  // it holds whether or not something promotes the section later, and it is
+  // what stops the ring bleeding through the panel's semi-transparent
+  // background when there is no video filling it. Cost measured at 1/255 max
+  // channel difference on touch.
+  //
+  // The Footer has the same shape but needs no equivalent — the canvas box
+  // stops at this card's bottom edge and never reaches it.
   return (
     <section
-      ref={sectionRef}
-      className="scroll-fade relative -mt-[13vh] px-4 pb-36 sm:px-10 sm:pb-44 lg:px-24"
+      className="relative z-[3] -mt-[13vh] px-4 pb-36 sm:px-10 sm:pb-44 lg:px-24"
     >
       <ScrollFadeEdge className="h-[min(48vh,26rem)] via-df-pure-black/55 to-df-pure-black/85" />
       {/* Two nested nodes because two different things want `transform` here.

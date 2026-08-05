@@ -118,10 +118,76 @@ html[data-device="touch"] .scroll-fade-edge {
   }
 }
 
+/* Compositor-driven dissolve. Where the browser has view timelines, the touch
+   fade stops being a JS job entirely: progress comes from the element's own
+   position in the scrollport, evaluated off the main thread, so it cannot lag
+   momentum scroll and costs nothing per frame.
+
+   Gated by data-exit / data-enter, which only useScrollFade sets, and only
+   after it has decided this path applies (touch + support). No device selector
+   is needed here — the JS is the gate, so ?device= and FORCE_DEVICE overrides
+   are honoured for free, and a desktop browser keeps the JS path and its blur.
+
+   Why two animations with *different* fill modes rather than `both`:
+   an element that fades in AND out needs two animations on one property, and
+   with `both` the second would hold its start value across the whole timeline
+   and clobber the first. `backwards` on the entry half fills only before its
+   range; `forwards` on the exit half fills only after its. Between the two —
+   the stretch where the section is simply on screen — neither applies and the
+   base opacity shows through. The ranges are disjoint for any element shorter
+   than the viewport, which is the case for every section that uses this.
+
+   Ranges mirror useScrollFade's math exactly: exit progress is -top/height, so
+   the JS `start` fraction is literally the exit percentage; the enter half
+   finishes at `span`. Easing approximates the JS smoothstep. */
+@keyframes scroll-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scroll-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  .scroll-fade[data-exit="true"] {
+    animation: scroll-fade-out cubic-bezier(0.45, 0, 0.55, 1) forwards;
+    animation-timeline: view();
+    animation-range: exit var(--fade-exit-start, 0%) exit 100%;
+  }
+
+  .scroll-fade[data-exit="true"][data-enter="true"] {
+    animation:
+      scroll-fade-in cubic-bezier(0.45, 0, 0.55, 1) backwards,
+      scroll-fade-out cubic-bezier(0.45, 0, 0.55, 1) forwards;
+    animation-timeline: view(), view();
+    animation-range:
+      entry 0% entry var(--fade-enter-end, 100%),
+      exit var(--fade-exit-start, 0%) exit 100%;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .scroll-fade,
   .scroll-fade[data-fading="true"] {
     opacity: 1;
     filter: none;
+  }
+
+  /* An animation outranks the opacity declaration above, so it has to go too.
+     useScrollFade already bails before setting data-exit under reduced motion;
+     this covers the frames before it runs. */
+  .scroll-fade[data-exit="true"],
+  .scroll-fade[data-exit="true"][data-enter="true"] {
+    animation: none;
   }
 }

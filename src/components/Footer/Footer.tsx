@@ -84,9 +84,18 @@ export const Footer = () => {
     >
       <ScrollFadeEdge className="h-[min(52vh,28rem)] via-df-pure-black/60 to-df-pure-black/90" />
       <div className="relative z-10">
+        {/* `isolate` is a perf guard, not a layout choice. GrainOverlay below
+            uses mix-blend-mode, which blends against everything painted beneath
+            it *in the nearest stacking context*. This <p> is `relative` with
+            z-index auto, so it makes no stacking context of its own — which
+            left the whole <footer> as the blend root, and only while scrolling,
+            because it is `.scroll-fade` dropping opacity below 1 that promotes
+            it. That put the ScrollFadeEdge band and the 130px-blur phosphor
+            bloom inside a group being re-blended on every scroll frame.
+            Isolating here confines the group to the wordmark's own layers. */}
         <p
           className={classNames(
-            "relative select-none text-center font-pixel text-[clamp(3.25rem,12.5vw,11.5rem)] leading-none",
+            "relative isolate select-none text-center font-pixel text-[clamp(3.25rem,12.5vw,11.5rem)] leading-none",
             wordmarkMotion && "motion-safe:animate-crt-shake",
           )}
         >

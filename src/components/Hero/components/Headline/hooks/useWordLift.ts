@@ -7,6 +7,7 @@ import {
   supportTarget,
   type SpringState,
 } from "../utils/wordLiftPhysics";
+import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 // The CSS entrance (fade + sign-tilt keyframes) must finish before JS takes
 // over the transform; this is delay + duration + margin, used as a fallback in
@@ -15,6 +16,18 @@ const ENTRANCE_FALLBACK_MS = 2900;
 
 // Lets the cursor act as a lifter on the settled sign: supporting it from
 // below tilts it back toward horizontal, letting go drops it with a bounce.
+//
+// Fine pointers only, on the same gate as TileField's hover trails and click
+// ripples: the whole affordance is "a cursor is holding this up", which needs a
+// cursor on screen to read as anything. The per-listener `pointerType` checks
+// already keep real fingers out, but they are not enough on their own —
+// ?device=touch and FORCE_DEVICE are emulated on hardware that still has a real
+// mouse, so without the profile gate the sign kept reacting to clicks in a mode
+// that is supposed to behave like a phone.
+//
+// Bailing here leaves the CSS entrance in charge. `word-tilt` fills forwards,
+// so the sign simply holds its resting tilt instead of being handed to the
+// spring — which is the correct static pose, not a missing one.
 export const useWordLift = (
   ref: RefObject<HTMLElement | null>,
   enabled: boolean,
@@ -22,7 +35,8 @@ export const useWordLift = (
   useEffect(() => {
     const el = ref.current;
     if (!enabled || !el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const profile = resolveDeviceProfile();
+    if (profile.reducedMotion || !profile.finePointer) return;
 
     let active = false;
     let armed = true;

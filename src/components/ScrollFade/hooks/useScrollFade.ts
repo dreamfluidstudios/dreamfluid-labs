@@ -1,5 +1,6 @@
 import { useLayoutEffect, type RefObject } from "react";
 import { registerScrollFrame } from "@/utils/scrollFrame";
+import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 type ScrollFadeOptions = {
   // Blur/dissolve as the block leaves the top of the viewport.
@@ -16,6 +17,11 @@ type ScrollFadeOptions = {
 };
 
 const ease = (p: number) => p * p * (3.0 - 2.0 * p);
+
+const supportsViewTimeline = () =>
+  typeof CSS !== "undefined" &&
+  typeof CSS.supports === "function" &&
+  CSS.supports("animation-timeline", "view()");
 
 // Drives a balanced scroll dissolve: blur-in from below, blur-out through the
 // top. Writes --scroll-fade for the .scroll-fade CSS hook, and toggles
@@ -45,6 +51,32 @@ export const useScrollFade = (
     }
 
     const span = Math.max(1 - start, 0.15);
+
+    // Compositor path. On touch the dissolve is opacity-only (globals.css drops
+    // the blur there), which is exactly what a view timeline can drive off the
+    // main thread. Hand the whole thing to CSS and register nothing: no scroll
+    // listener, no per-frame rect read, no style write. This is the part that
+    // scales — every section added to the page is another fade that costs the
+    // scroll path nothing instead of another getBoundingClientRect per frame.
+    //
+    // Requires exit: the CSS expresses exit and enter+exit, not enter alone.
+    // An enter-only caller falls through to the JS path rather than silently
+    // getting a different curve.
+    if (resolveDeviceProfile().touch && exit && supportsViewTimeline()) {
+      el.style.setProperty("--fade-exit-start", `${(start * 100).toFixed(3)}%`);
+      el.dataset.exit = "true";
+      if (enter) {
+        el.style.setProperty("--fade-enter-end", `${(span * 100).toFixed(3)}%`);
+        el.dataset.enter = "true";
+      }
+      return () => {
+        el.style.removeProperty("--fade-exit-start");
+        el.style.removeProperty("--fade-enter-end");
+        delete el.dataset.exit;
+        delete el.dataset.enter;
+      };
+    }
+
     let fade = 0;
     let written = -1;
 

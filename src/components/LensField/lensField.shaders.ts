@@ -31,12 +31,16 @@ export const LENS_VERTEX = /* glsl */ `
 const f = (n: number) => n.toFixed(5);
 const rad = (deg: number) => (deg * Math.PI) / 180;
 
-// Arc samples run on the scroll-rotated/expanded frame (`qr`), not raw `q`.
+// Arc samples run on the scroll-rotated/expanded frame (`qr`), not raw `q` —
+// but every band shares the same ring frame derived from it (arcDist / arcAng /
+// warpDir / arcScale), so main() builds that once and passes it in.
 // Radius = fitted content oval + this band's gap.
 const arcCall = (a: LensArc) =>
-  `    arcContrib(qr, ${f(rad(a.angle))}, ${f(a.gap)}, ${f(a.thickness)}, ${f(
-    rad(a.arcLength / 2),
-  )}, ${f(a.intensity)}, disp, fringe, ridge);`;
+  `    arcContrib(arcDist, arcAng, warpDir, arcScale, ${f(rad(a.angle))}, ${f(
+    a.gap,
+  )}, ${f(a.thickness)}, ${f(rad(a.arcLength / 2))}, ${f(
+    a.intensity,
+  )}, disp, fringe, ridge);`;
 
 export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   precision highp float;
@@ -95,8 +99,7 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
   }
 
-  // One soft focus-ring band. q is the fragment's offset from the content
-  // oval center in aspect-corrected UV. Accumulates:
+  // One soft focus-ring band. Accumulates:
   //  - disp:   gentle pull toward the focal center under the band, so
   //            grid/tiles bend as if seen through the lens ring
   //  - fringe: the band itself — a gaussian prismatic glow grading from
@@ -104,20 +107,25 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
   //            aberration character, no hard edges)
   //  - ridge:  band coverage, used to keep backdrop content visible (and
   //            warpable) under the bands despite the radial fade
+  //
+  // The first four args are the shared ring frame, built once per fragment in
+  // main(). They depend only on the fragment, not on which band is being
+  // drawn — every arc used to rebuild them from q, which cost four identical
+  // length()/atan() pairs per fragment on top of the one atan the angular span
+  // actually needs. A driver may CSE that away; enough mobile ones don't that
+  // it isn't worth relying on, and at ~2M fragments a frame it is not small.
+  //   d        distance from the oval center, in the x-compressed (circular) frame
+  //   ang      angle in that same frame
+  //   warpDir  inward unit vector for the bulge pull, in the uncompressed frame
+  //   s        uArcScale, clamped
   void arcContrib(
-    vec2 q, float angle, float gap, float thickness,
+    float d, float ang, vec2 warpDir, float s,
+    float angle, float gap, float thickness,
     float halfLen, float intensity, inout vec2 disp, inout vec3 fringe,
     inout float ridge
   ) {
-    float stretch = max(uFocusStretch, 0.001);
-    float s = max(uArcScale, 0.001);
     float radius = uFocusRadius + gap * s;
     float th = max(thickness * s, 0.008);
-    // The ring is an ellipse following the copy's wide shape: compress x so
-    // distance/angle math happens on a circle.
-    vec2 pe = vec2(q.x / stretch, q.y);
-    float d = length(pe);
-    float ang = atan(pe.y, pe.x);
     float da = abs(atan(sin(ang - angle), cos(ang - angle)));
     // Long soft tails so segments melt away rather than stopping.
     float along = 1.0 - smoothstep(halfLen * 0.4, halfLen, da);
@@ -137,7 +145,7 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
     // a soft bent halo — still arc-local, not the old center-flooding bowl.
     float wt = t / max(uBulge, 1.0);
     float bulge = exp(-wt * wt) * along;
-    disp += -(q / max(length(q), 1e-4)) * bulge * uWarp;
+    disp += warpDir * bulge * uWarp;
     ridge = max(ridge, bulge);
   }
 
@@ -220,6 +228,17 @@ export const buildLensFragment = (arcs: LensArc[]) => /* glsl */ `
     vec2 disp = vec2(0.0);
     vec3 fringe = vec3(0.0);
     float ridge = 0.0;
+
+    // Ring frame shared by every band (see arcContrib). The ring is an ellipse
+    // following the copy's wide shape, so x is compressed to make the
+    // distance/angle math happen on a circle. warpDir stays in the
+    // *uncompressed* frame — the bulge pulls toward the true focal center.
+    float arcStretch = max(uFocusStretch, 0.001);
+    float arcScale = max(uArcScale, 0.001);
+    vec2 pe = vec2(qr.x / arcStretch, qr.y);
+    float arcDist = length(pe);
+    float arcAng = atan(pe.y, pe.x);
+    vec2 warpDir = -qr / max(length(qr), 1e-4);
 ${arcs.map(arcCall).join("\n")}
 
     // Rotate disp back into screen space (it was accumulated on qr).
