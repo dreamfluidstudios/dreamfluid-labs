@@ -22,20 +22,30 @@ const ZoomBlurField = dynamic(
   { ssr: false },
 );
 
-// Hero WebGL pass: lens arcs (default) or zoom-blur peephole.
-// Override with ?backdrop=lens|zoom.
+// Hero WebGL pass: lens arcs, zoom-blur peephole, or none at all.
+// Override with ?backdrop=lens|zoom|tiles.
+//
+// "tiles" runs no WebGL pass whatsoever — TileField keeps its own DOM layers
+// and paints its own bitmap, which is what the backdrop was before any of this
+// existed. It is here as a perf bisect: it removes the lens canvas from the
+// page entirely, so if scrolling is still rough with ?backdrop=tiles then the
+// lens is not what is costing frames and the search should move elsewhere.
+// Note the fallback is genuinely cheap on touch — hover trails and idle sweeps
+// are desktop-only, so after the intro slam ripple the tile loop parks and the
+// backdrop is a static CSS grid plus an idle canvas.
 //
 // TODO(both-mode): Stacked lens+zoom is shelved — compositing still left a
 // black outline / halo on the fringe. Ignore ?backdrop=both for now (falls
-// back to lens). Likely next: additive / premultiplied fringe, or one pass.
-type BackdropMode = "lens" | "zoom";
-const DEFAULT_BACKDROP: BackdropMode = "lens";
+// back to the default). Likely next: additive / premultiplied fringe, or one
+// pass.
+type BackdropMode = "lens" | "zoom" | "tiles";
+const DEFAULT_BACKDROP: BackdropMode = "tiles";
 
 const resolveBackdrop = (): BackdropMode => {
   if (typeof window === "undefined") return DEFAULT_BACKDROP;
   const q = new URLSearchParams(window.location.search).get("backdrop");
   // "both" intentionally ignored until stacked compositing is solid.
-  return q === "zoom" || q === "lens" ? q : DEFAULT_BACKDROP;
+  return q === "zoom" || q === "lens" || q === "tiles" ? q : DEFAULT_BACKDROP;
 };
 
 // The hero's backdrop. TileField paints into a shared canvas inside the hero
@@ -68,7 +78,10 @@ export const HeroBackdropSection = ({
 
   const showLens = backdrop === "lens";
   const showZoom = backdrop === "zoom";
-  const fieldActive = showZoom ? zoomActive : lensActive;
+  // Only a WebGL pass that is actually mounted can claim the backdrop. Stated
+  // explicitly rather than falling through to lensActive, so "tiles" cannot be
+  // left invisible by a stale active flag.
+  const fieldActive = showZoom ? zoomActive : showLens ? lensActive : false;
 
   useEffect(() => {
     setBackdrop(resolveBackdrop());
