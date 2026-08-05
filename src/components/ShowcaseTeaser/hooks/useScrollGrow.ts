@@ -1,5 +1,6 @@
 import { useLayoutEffect, type RefObject } from "react";
 import { registerScrollFrame } from "@/utils/scrollFrame";
+import { resolveDeviceProfile } from "@/utils/deviceProfile";
 
 // How far the panel grows: from GROW_FROM of its container's width at the
 // fold, to full width once its top has scrolled up to GROW_UNTIL of the
@@ -12,7 +13,9 @@ const MIN_PX = 320;
 
 // Drives the showcase panel's scroll-linked growth: measures where the panel
 // sits in the viewport each scroll frame and eases it between the bounds above.
-// With reduced motion the panel just stays full size.
+// Desktop only — touch (portrait or landscape) stays full-width 16:9 with no
+// scroll-linked scale, so phones skip the per-frame measure/transform work.
+// Reduced motion also stays full size.
 //
 // This scales with `transform`, not `width`. Writing width per scroll frame
 // invalidated layout for the whole subtree every frame, and — because the panel
@@ -30,7 +33,12 @@ export const useScrollGrow = (ref: RefObject<HTMLElement | null>) => {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    // Touch + reduced-motion: no grow — panel is already layout-full-width
+    // with aspect-video, which is the mobile target in both orientations.
+    if (
+      resolveDeviceProfile().touch ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
       el.style.transform = "none";
       return;
     }

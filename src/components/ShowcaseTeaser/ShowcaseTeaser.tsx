@@ -10,8 +10,9 @@ import { useScrollGrow } from "./hooks/useScrollGrow";
 // Swap SHOWCASE_YOUTUBE_ID / clear it to go back to the blank placeholder.
 //
 // The section pulls itself up over the hero's bottom edge so the panel peeks
-// above the fold, then scrolling reveals it while useScrollGrow scales it up
-// from a narrow inset to full size.
+// above the fold. On desktop, scrolling reveals it while useScrollGrow scales
+// it up from a narrow inset to full size; on touch it stays full-width 16:9
+// in both orientations (no scroll resize).
 // No blur-in (already teased in the hero); blur-out as the footer takes over
 // on desktop — touch dissolves on opacity alone, see globals.css.
 
