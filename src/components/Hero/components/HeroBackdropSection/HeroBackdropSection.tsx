@@ -39,7 +39,8 @@ const ZoomBlurField = dynamic(
 // back to the default). Likely next: additive / premultiplied fringe, or one
 // pass.
 type BackdropMode = "lens" | "zoom" | "tiles";
-const DEFAULT_BACKDROP: BackdropMode = "lens";
+// TEMP: lens off for mobile/perf bisect. Flip back to "lens" when done.
+const DEFAULT_BACKDROP: BackdropMode = "tiles";
 
 const resolveBackdrop = (): BackdropMode => {
   if (typeof window === "undefined") return DEFAULT_BACKDROP;
