@@ -30,3 +30,6 @@ npm-debug.log*
 
 # playwright mcp output
 .playwright-mcp/
+
+design/
+refs/
